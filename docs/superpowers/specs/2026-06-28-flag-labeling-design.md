@@ -53,7 +53,7 @@ and the bases are not visible. The chosen approach (A + C below) follows from th
                      ▼
 ┌─ RUNTIME (mod, in-game) ──────────────────────────────────────┐
 │  flag_sectors.lua   (require'd read-only data table)          │
-│     Sectors[fingerprint] = { f1 = {axis=0.50}, ... }          │
+│     Sectors[fp] = { bases={a1={x,y}..}, flags={f1={x,y,axis}}}│
 │        │                                                      │
 │        ▼                                                      │
 │  LabelFlags()  (called once from OnGameStart)                 │
@@ -61,7 +61,7 @@ and the bases are not visible. The chosen approach (A + C below) follows from th
 │    2. look up Sectors[fingerprint]                            │
 │         hit  -> orient by team(a/b), assign sector + rank     │
 │         miss -> fallback C: every flag CONTESTED, rank nil    │
-│    3. write Context.FlagLabel[name] = {sector=, rank=, axis=} │
+│    3. write Context.FlagLabel[name]={sector,rank,axis,x,y}     │
 │        │                                                      │
 │        ▼                                                      │
 │  Context.FlagLabel   (consumed by future AI logic; not wired  │
@@ -96,24 +96,43 @@ build_sectors.py          committed data     LabelFlags() at OnGameStart
   the `{team}` letter. Capture flags are the `f`-named `visor MapPoint` entities.
 - Compute per capture flag: `dA = min euclidean dist to a-bases`,
   `dB = min dist to b-bases`, `axis = dA / (dA + dB)`.
+- Store **raw `x, y` per flag and per base** in addition to `axis`. Rationale: `axis`
+  is a lossy 1D projection onto the A->B line; it discards the lateral (y) dimension and
+  all pairwise flag-to-flag distances. bastogne already shows 8 flags collapsing to
+  `axis ~= 0.5` while spread widely on y. Future atk/def logic will likely need 2D
+  signals (which contested flag sits near a given spawn, flag clustering, flank side).
+  Storing `x, y` (one parse the script already does) lets `LabelFlags()` derive those at
+  load time without a pipeline rebuild. Do NOT store `z` (terrain height, unused) or a
+  full distance matrix (derivable from `x, y` on load).
 - Emit a Lua fragment into `flag_sectors.lua` keyed by the fingerprint (below).
 - The script is run by hand and its output is committed. It never ships to the game.
 
 ### 2. Data file — `resource/script/multiplayer/flag_sectors.lua`
 
-A plain Lua table, `require`'d by `bot.lua`:
+A plain Lua table, `require`'d by `bot.lua`. Each map entry carries a `bases` block
+(the four spawn coordinates) and a `flags` block (`x, y, axis` per capture flag):
 
 ```lua
 Sectors = {
   ["f1,f10,f2,f20,f3,f4,f5,f6,f7,f8,f9"] = {   -- bastogne fingerprint
-    f1={axis=0.50}, f2={axis=0.46}, f3={axis=0.49}, f4={axis=0.58},
-    f5={axis=0.32}, f6={axis=0.33}, f7={axis=0.48}, f8={axis=0.51},
-    f9={axis=0.51}, f10={axis=0.60}, f20={axis=0.51},
+    bases = {
+      a1={x=-4300, y=-647}, a2={x=-4300, y=746},
+      b1={x= 3931, y=-646}, b2={x= 3986, y=746},
+    },
+    flags = {
+      f1 ={x= -212, y=  -98, axis=0.50}, f2 ={x= -618, y=-2952, axis=0.46},
+      f3 ={x= -288, y= 3674, axis=0.49}, f4 ={x=  573, y=-1945, axis=0.58},
+      f5 ={x=-1738, y= 1707, axis=0.32}, f6 ={x=-1748, y=-1852, axis=0.33},
+      f7 ={x= -357, y=-1284, axis=0.48}, f8 ={x= -101, y=  970, axis=0.51},
+      f9 ={x=  -66, y= 2445, axis=0.51}, f10={x=  739, y= 1705, axis=0.60},
+      f20={x=  -14, y= 5042, axis=0.51},
+    },
   },
 }
 ```
 
-Only `axis` is stored per flag. Sector thresholds and rank are derived at runtime so
+`axis` is a precomputed convenience; `x, y` (flags and bases) are the lossless source
+for any 2D label derived later. Sector thresholds and rank are derived at runtime so
 they can be tuned without rebuilding the table.
 
 ### 3. Runtime labeler — `LabelFlags()` in `bot.lua`
@@ -121,19 +140,24 @@ they can be tuned without rebuilding the table.
 - Called once from `OnGameStart`, after the flag list is available.
 - Builds the fingerprint: collect `flag.name` for all `Scene.Flags`, sort
   ascending (string sort), join with `,`.
-- Look up `Sectors[fingerprint]`.
-- **Hit:** for each flag, read its stored `axis`. Orient by team:
+- Look up `Sectors[fingerprint]`; the entry has `.bases` and `.flags`.
+- **Hit:** for each flag, read its stored `entry.flags[name]` (`x, y, axis`). Orient by
+  team:
   - `team == "a"`: `myAxis = axis` (0 = my home, 1 = enemy home).
   - `team == "b"`: `myAxis = 1 - axis` (invert, because B's home is the axis-1 end).
   - Sector from `myAxis`: `< 0.4` OWN, `> 0.6` ENEMY, else CONTESTED (thresholds are
     named constants, tunable).
   - Rank: sort the map's flags by `myAxis` descending; rank 1 = highest `myAxis` =
     closest to enemy home. Store the rank per flag.
+  - Pass the raw `x, y` (and the `bases` block) straight through to the output so future
+    atk/def logic can derive 2D signals at load without a rebuild. This spec computes no
+    other 2D label yet (YAGNI).
 - **Miss (fallback C):** every flag gets `sector = "CONTESTED"`, `rank = nil`,
-  `axis = nil`; print one log line `SECTOR_FALLBACK fingerprint=<...>` so the unknown
+  `axis/x/y = nil`; print one log line `SECTOR_FALLBACK fingerprint=<...>` so the unknown
   map can be added to the table later. Behavior degrades to today's logic (no sectoring).
 - Output: `Context.FlagLabel[name] = { sector = "OWN"|"CONTESTED"|"ENEMY",
-  rank = <int or nil>, axis = <number or nil> }`.
+  rank = <int or nil>, axis = <number or nil>, x = <number or nil>, y = <number or nil> }`,
+  plus `Context.FlagBases = entry.bases` (or nil on a miss).
 
 ## Fingerprint and Collision
 
@@ -206,9 +230,12 @@ ranked flags into thirds) is noted as a future option, not adopted in v1.
 
 ## Testing
 
-- **Build script:** assert bastogne yields 11 flags, f6/f5 axis < 0.4, f10 axis > 0.59,
-  and that the third z-coordinate on base positions is parsed without error.
+- **Build script:** assert bastogne yields 11 flags each with `x, y, axis`, a `bases`
+  block with all four spawns (a1/a2/b1/b2), f6/f5 axis < 0.4, f10 axis > 0.59, and that
+  the third z-coordinate on base positions is parsed without error.
 - **LabelFlags (unit, mocked Scene.Flags + team):**
+  - raw `x, y` pass through to `Context.FlagLabel` (e.g. f10 x=739, y=1705) and
+    `Context.FlagBases` is populated with the four spawn coords.
   - bastogne fingerprint + team a: f10 sector ENEMY and rank 1; f5 OWN and rank 11.
   - bastogne fingerprint + team b: orientation inverts (f5/f6 become ENEMY-side, f10
     becomes OWN-side); rank 1 flips to the opposite end.
