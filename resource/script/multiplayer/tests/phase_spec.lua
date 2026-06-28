@@ -46,13 +46,31 @@ local f3 = { heavy = 1, medium = 1, light = 2, rifle = 4, smg = 0, aux = 0 }
 local pick = DecideTier(late, f3, true, allOk)
 assert(pick == "medium" or pick == "heavy", "enemy tanks leans armor, got " .. tostring(pick))
 
--- DecideTier: smg under-filled -> picks smg over rifle
-local fRifled = { heavy = 0, medium = 0, light = 0, rifle = 3, smg = 0, aux = 0 }
+-- DecideTier: smg under-filled -> picks smg over rifle and light
+-- Use light=1 so smg is strictly more under-filled (avoids tie with light).
+local fRifled = { heavy = 0, medium = 0, light = 1, rifle = 3, smg = 0, aux = 0 }
 local earlyOk = { light = true, rifle = true, smg = true }
 local early = CurrentPhase(0)
-eq(DecideTier(early, fRifled, false, earlyOk), "smg", "smg picked when rifle filled and smg empty")
+eq(DecideTier(early, fRifled, false, earlyOk), "smg", "smg picked when rifle and light filled and smg empty")
 
 -- DecideTier: losing bumps smg weight to 2; smg under-filled -> picks smg
 local fLosing = { heavy = 0, medium = 0, light = 0, rifle = 3, smg = 0, aux = 0 }
 eq(DecideTier(early, fLosing, false, earlyOk, true), "smg", "losing smg bump picks smg")
 print("phase OK")
+
+-- Group helpers: elite flag is orthogonal to tier, and empty-group helpers return zero.
+eq(TierOf({class = UnitClass.Infantry, inf = "rifle", elite = true}), "rifle", "elite rifle still rifle tier")
+eq(TierOf({class = UnitClass.Infantry, inf = "smg",   elite = true}), "smg",   "elite smg still smg tier")
+assert(type(CountByTier)      == "function", "CountByTier defined")
+assert(type(GroupMemberCount) == "function", "GroupMemberCount defined")
+assert(type(GroupEliteCount)  == "function", "GroupEliteCount defined")
+assert(type(ManageGroups)     == "function", "ManageGroups defined")
+assert(type(GroupToFill)      == "function", "GroupToFill defined")
+assert(type(CompactGroups)    == "function", "CompactGroups defined")
+local emptyGroup = { members = {}, size = 8 }
+local ec = CountByTier(emptyGroup)
+eq(ec.rifle, 0, "CountByTier empty group rifle=0")
+eq(ec.smg,   0, "CountByTier empty group smg=0")
+eq(GroupMemberCount(emptyGroup), 0, "GroupMemberCount empty=0")
+eq(GroupEliteCount(emptyGroup),  0, "GroupEliteCount empty=0")
+print("group helpers OK")

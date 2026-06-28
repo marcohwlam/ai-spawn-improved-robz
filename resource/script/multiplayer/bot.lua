@@ -26,6 +26,10 @@ local Context = {
 	OfficerCount = 0,  -- quant countdown for the officer keep-alive trickle
 	AtRifleCount = 0,  -- quant countdown for the AT-rifle keep-alive trickle
 	RatioCount = 0,    -- ratio (non-aux) units spawned since the last aux batch
+	Groups = {},        -- array of at most 2 live groups
+	SquadGroup = {},    -- squadId -> index into Context.Groups
+	FillGroup = nil,    -- index of the group currently being filled (set per spawn)
+	PendingGroup = nil, -- group index handed to OnGameSpawn for the unit just spawned
 	AuxOwed = 0,       -- aux units still to inject in the current batch
 	MatchQuants = 0,   -- quant ticks since match start (elapsed-time estimate)
 	LastSpawn = {},    -- unit.unit -> MatchQuants tick of last spawn (recharge tracking)
@@ -74,6 +78,9 @@ local AtRifleCap      = 1       -- max live AT rifles kept
 -- in the debug log (mq -> t). Unit unlocks are left entirely to the engine, so
 -- this value no longer gates spawning; it is purely cosmetic for log review.
 local QuantsPerSec = 70
+
+local GroupSize = 8   -- target member count per group
+local MaxGroups = 2   -- at most two live groups at a time
 
 -- Composition is driven by a core infantry : tank ratio. Auxiliary units do not
 -- count toward the ratio; they are injected up to a cap and filtered by trigger.
@@ -314,6 +321,68 @@ function GetFieldCounts()
 	return c
 end
 
+-- Count one group's live members by tier (heavy/medium/light/rifle/smg); aux not counted.
+function CountByTier(group)
+	local c = { heavy=0, medium=0, light=0, rifle=0, smg=0, aux=0 }
+	for squadId in pairs(group.members) do
+		local entry = Context.FieldUnits[squadId]
+		if entry then
+			local tier = TierOf(entry)
+			if tier then c[tier] = c[tier] + 1 else c.aux = c.aux + 1 end
+		end
+	end
+	return c
+end
+
+function GroupMemberCount(group)
+	local n = 0
+	for _ in pairs(group.members) do n = n + 1 end
+	return n
+end
+
+function GroupEliteCount(group)
+	local n = 0
+	for squadId in pairs(group.members) do
+		local e = Context.FieldUnits[squadId]
+		if e and e.elite then n = n + 1 end
+	end
+	return n
+end
+
+-- Create groups: the 1st whenever none exist; the 2nd only once the 1st is full.
+function ManageGroups()
+	if #Context.Groups == 0 then
+		Context.Groups[1] = { members = {}, size = GroupSize }
+	elseif #Context.Groups == 1 and GroupMemberCount(Context.Groups[1]) >= Context.Groups[1].size then
+		Context.Groups[2] = { members = {}, size = GroupSize }
+	end
+end
+
+-- The first group not yet at size, or nil if all full.
+function GroupToFill()
+	for i, g in ipairs(Context.Groups) do
+		if GroupMemberCount(g) < g.size then return i end
+	end
+	return nil
+end
+
+-- Drop empty groups and reindex both Groups and SquadGroup.
+function CompactGroups()
+	local newGroups = {}
+	local remap = {}  -- old index -> new index
+	for i, g in ipairs(Context.Groups) do
+		if GroupMemberCount(g) > 0 then
+			newGroups[#newGroups + 1] = g
+			remap[i] = #newGroups
+		end
+	end
+	Context.Groups = newGroups
+	-- Rebuild SquadGroup to point at the new indices.
+	for squadId, oldIdx in pairs(Context.SquadGroup) do
+		Context.SquadGroup[squadId] = remap[oldIdx]  -- nil if group was dissolved
+	end
+end
+
 function LiveSquadCount()
 	local n = 0
 	for _ in pairs(BotApi.Scene.Squads) do n = n + 1 end
@@ -432,6 +501,9 @@ function GetUnitToSpawn(units)
 	local phase = CurrentPhase(elapsed)
 	local capRank = TierRank[phase.armorCap]
 
+	-- Resolve fill group for per-group field counts and elite cap.
+	local g = Context.FillGroup and Context.Groups[Context.FillGroup]
+
 	-- Build the eligible pool: affordable, off-cooldown, and within the phase armor cap.
 	local pool = {}
 	for i, unit in pairs(units) do
@@ -446,14 +518,16 @@ function GetUnitToSpawn(units)
 		local tier = TierOf(unit)
 		local capOk = (tier == nil) or (TierRank[tier] <= capRank) -- aux not capped
 		local phaseOk = (unit.phase == nil) or (unit.phase == phase.name) -- per-unit phase lock
-		if affordable and cooled and notRecentlyFailed and capOk and phaseOk then
+		local eliteOk = not (g and unit.elite and GroupEliteCount(g) >= 1)
+		if affordable and cooled and notRecentlyFailed and capOk and phaseOk and eliteOk then
 			table.insert(pool, unit)
 		end
 	end
 	if #pool == 0 then return nil end
 
 	-- Aux is separate from the four-tier ratio; it is injected on a fixed cycle.
-	local field = GetFieldCounts()
+	local field
+	if g then field = CountByTier(g) else field = GetFieldCounts() end
 	local function collectAux()
 		local out = {}
 		for i, t in pairs(pool) do
@@ -557,6 +631,10 @@ function OnGameStart()
 	Context.FailCooldown = {}
 	Context.SquadTarget = {}
 	Context.WaveTarget = nil
+	Context.Groups = {}
+	Context.SquadGroup = {}
+	Context.FillGroup = nil
+	Context.PendingGroup = nil
 	UpdateUnitToSpawn(Context.Purchase)
 end
 
@@ -633,10 +711,12 @@ function OnGameQuant()
 		Context.ArmorLead = (phase.targets.heavy or 0) + (phase.targets.medium or 0)
 		-- When losing, also front-load one extra SMG/assault squad.
 		Context.SmgLead = (FlagDeficit() > 0) and 1 or 0
+		ManageGroups()
 		print("[AISPAWN] WAVE mq=" .. tostring(Context.MatchQuants)
 			.. " t=" .. tostring(math.floor(Context.MatchQuants / QuantsPerSec))
 			.. " phase=" .. phase.name .. " budget=" .. tostring(budget)
-			.. " deficit=" .. tostring(FlagDeficit()))
+			.. " deficit=" .. tostring(FlagDeficit())
+			.. " groups=" .. tostring(#Context.Groups))
 	end
 
 	-- Drive the in-progress wave: one Spawn every WaveSpawnSpacing quants (the
@@ -646,18 +726,26 @@ function OnGameQuant()
 		Context.WaveCooldown = Context.WaveCooldown - 1
 		if Context.WaveCooldown <= 0 then
 			Context.WaveCooldown = WaveSpawnSpacing
-			local r = AttemptSpawn("SPAWN")
-			if r == "ok" then
-				Context.WaveRemaining = Context.WaveRemaining - 1
-				Context.WaveFails = 0
-			else
-				-- "fail" (benched a unit) or "empty" (pool exhausted): a persistently
-				-- unspendable wave still ends after MaxWaveFails, but a single failure
-				-- just falls through to the next-cheapest pick on the following tick.
-				Context.WaveFails = Context.WaveFails + 1
-				if Context.WaveFails >= MaxWaveFails then
-					Context.WaveRemaining = 0
+			Context.FillGroup = GroupToFill()
+			Context.PendingGroup = Context.FillGroup
+			if Context.FillGroup ~= nil then
+				local r = AttemptSpawn("SPAWN")
+				if r == "ok" then
+					Context.WaveRemaining = Context.WaveRemaining - 1
+					Context.WaveFails = 0
+				else
+					-- "fail" (benched a unit) or "empty" (pool exhausted): a persistently
+					-- unspendable wave still ends after MaxWaveFails, but a single failure
+					-- just falls through to the next-cheapest pick on the following tick.
+					Context.WaveFails = Context.WaveFails + 1
+					if Context.WaveFails >= MaxWaveFails then
+						Context.WaveRemaining = 0
+					end
 				end
+			else
+				-- Both groups are full: nothing to fill, so end the wave now (otherwise the
+				-- cadence would freeze until attrition frees a slot).
+				Context.WaveRemaining = 0
 			end
 			if Context.WaveRemaining == 0 then
 				print("[AISPAWN] WAVE_END")
@@ -675,6 +763,7 @@ function OnGameQuant()
 			local mg = GetMGUnit()
 			if mg then
 				Context.SpawnInfo = mg -- routed as a defender (DefenderClasses[MG]=true)
+				Context.PendingGroup = nil
 				local ok = BotApi.Commands:Spawn(mg.unit, MaxSquadSize)
 				print("[AISPAWN] DEFENDER try=" .. tostring(mg.unit) .. " ok=" .. tostring(ok))
 				if not ok then Context.FailCooldown[mg.unit] = Context.MatchQuants end
@@ -682,7 +771,11 @@ function OnGameQuant()
 			end
 		elseif Context.BackfillCount >= BackfillInterval then
 			Context.BackfillCount = 0
-			AttemptSpawn("BACKFILL")
+			Context.FillGroup = GroupToFill()
+			if Context.FillGroup ~= nil then
+				Context.PendingGroup = Context.FillGroup
+				AttemptSpawn("BACKFILL")
+			end
 		end
 	end
 
@@ -695,6 +788,7 @@ function OnGameQuant()
 			if line then
 				Context.SpawnFlags.isCapper = true
 				Context.PendingCapper = line
+				Context.PendingGroup = nil
 				local ok = BotApi.Commands:Spawn(line.unit, 1) -- single soldier, not a full squad
 				print("[AISPAWN] CAPPER try=" .. tostring(line.unit)
 					.. " ok=" .. tostring(ok))
@@ -717,6 +811,7 @@ function OnGameQuant()
 			local off = GetOfficerUnit()
 			if off then
 				Context.SpawnInfo = off
+				Context.PendingGroup = nil
 				local ok = BotApi.Commands:Spawn(off.unit, MaxSquadSize)
 				print("[AISPAWN] OFFICER try=" .. tostring(off.unit) .. " ok=" .. tostring(ok))
 				if not ok then Context.FailCooldown[off.unit] = Context.MatchQuants end
@@ -734,6 +829,7 @@ function OnGameQuant()
 			local atr = GetAtRifleUnit()
 			if atr then
 				Context.SpawnInfo = atr
+				Context.PendingGroup = nil
 				local ok = BotApi.Commands:Spawn(atr.unit, MaxSquadSize)
 				print("[AISPAWN] ATRIFLE try=" .. tostring(atr.unit) .. " ok=" .. tostring(ok))
 				if not ok then Context.FailCooldown[atr.unit] = Context.MatchQuants end
@@ -744,11 +840,15 @@ function OnGameQuant()
 
 	for squadId in pairs(Context.FieldUnits) do
 		if not BotApi.Scene:IsSquadExists(squadId) then
+			local gi = Context.SquadGroup[squadId]
+			if gi and Context.Groups[gi] then Context.Groups[gi].members[squadId] = nil end
+			Context.SquadGroup[squadId] = nil
 			Context.FieldUnits[squadId] = nil
 			Context.Cappers[squadId] = nil
 			Context.SquadTarget[squadId] = nil
 		end
 	end
+	CompactGroups()
 
 	for i, squad in pairs(BotApi.Scene.Squads) do
 		if not Context.SquadTimers[squad] then
@@ -830,6 +930,11 @@ function OnGameSpawn(args)
 		if Context.SpawnInfo then
 			Context.FieldUnits[args.squadId] = Context.SpawnInfo
 			Context.LastSpawn[Context.SpawnInfo.unit] = Context.MatchQuants
+			if Context.PendingGroup and Context.Groups[Context.PendingGroup] then
+				Context.Groups[Context.PendingGroup].members[args.squadId] = true
+				Context.SquadGroup[args.squadId] = Context.PendingGroup
+			end
+			Context.PendingGroup = nil
 		end
 	end
 	-- Officers stay parked at the spawn to survive (they hold the unit cap); everyone
