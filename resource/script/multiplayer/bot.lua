@@ -360,19 +360,22 @@ function GroupEliteCount(group)
 	return n
 end
 
+-- Tag for per-bot attribution in shared game.log (multiple AI bots print to one file).
+function PidTag() return " pid=" .. tostring(BotApi.Instance.playerId) end
+
 -- Create groups: the 1st whenever none exist; the 2nd only once the 1st is full.
 function ManageGroups()
 	if not Context.Groups[1] then
 		local t = PickGroupTarget(nil)
 		Context.Groups[1] = { members = {}, size = GroupSize, target = t, pending = 0,
 			phase = CurrentPhase(Context.MatchQuants / QuantsPerSec).name }
-		print("[AISPAWN] GROUP_NEW id=1 target=" .. tostring(t))
+		print("[AISPAWN] GROUP_NEW id=1 target=" .. tostring(t) .. PidTag())
 	elseif not Context.Groups[2]
 	   and GroupMemberCount(Context.Groups[1]) >= Context.Groups[1].size then
 		local t = PickGroupTarget(Context.Groups[1].target)
 		Context.Groups[2] = { members = {}, size = GroupSize, target = t, pending = 0,
 			phase = CurrentPhase(Context.MatchQuants / QuantsPerSec).name }
-		print("[AISPAWN] GROUP_NEW id=2 target=" .. tostring(t))
+		print("[AISPAWN] GROUP_NEW id=2 target=" .. tostring(t) .. PidTag())
 	end
 end
 
@@ -386,7 +389,7 @@ function UpdateGroupTargets()
 			local newT = PickGroupTarget(other)
 			if newT and newT ~= g1.target then
 				print("[AISPAWN] GROUP_TARGET id=1 target=" .. tostring(newT)
-					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority"))
+					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority") .. PidTag())
 			end
 			g1.target = newT
 		end
@@ -397,7 +400,7 @@ function UpdateGroupTargets()
 			local newT = PickGroupTarget(other)
 			if newT and newT ~= g2.target then
 				print("[AISPAWN] GROUP_TARGET id=2 target=" .. tostring(newT)
-					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority"))
+					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority") .. PidTag())
 			end
 			g2.target = newT
 		end
@@ -421,7 +424,7 @@ function PruneGroups()
 		local g = Context.Groups[i]
 		if g and GroupMemberCount(g) == 0 then
 			if (g.pending or 0) == 0 then
-				if g.seeded then print("[AISPAWN] GROUP_END id=" .. i) end
+				if g.seeded then print("[AISPAWN] GROUP_END id=" .. i .. PidTag()) end
 				Context.Groups[i] = nil
 			else
 				-- pending should clear within ~1 quant once OnGameSpawn lands. If it lingers,
@@ -429,7 +432,7 @@ function PruneGroups()
 				-- it cannot orphan (and desync the queue) for the rest of the match.
 				g.staleSince = g.staleSince or Context.MatchQuants
 				if Context.MatchQuants - g.staleSince > 3 * QuantsPerSec then
-					print("[AISPAWN] GROUP_END id=" .. i .. " reason=stale_pending")
+					print("[AISPAWN] GROUP_END id=" .. i .. " reason=stale_pending" .. PidTag())
 					Context.Groups[i] = nil
 				end
 			end
@@ -747,7 +750,7 @@ function AttemptSpawn(tag)
 		local pname = CurrentPhase(Context.MatchQuants / QuantsPerSec).name
 		if g.phase ~= pname then
 			g.phase = pname
-			print("[AISPAWN] GROUP_UP id=" .. tostring(Context.FillGroup) .. " phase=" .. pname)
+			print("[AISPAWN] GROUP_UP id=" .. tostring(Context.FillGroup) .. " phase=" .. pname .. PidTag())
 		end
 		if ok then
 			g.pending = (g.pending or 0) + 1
@@ -760,7 +763,7 @@ function AttemptSpawn(tag)
 			.. " tier=" .. tostring(TierOf(unit))
 			.. " try=" .. tostring(unit.unit)
 			.. " ok=" .. tostring(ok)
-			.. " size=" .. tostring(GroupMemberCount(g) + (g.pending or 0)) .. "/" .. tostring(g.size))
+			.. " size=" .. tostring(GroupMemberCount(g) + (g.pending or 0)) .. "/" .. tostring(g.size) .. PidTag())
 	end
 	if not ok then
 		Context.FailCooldown[unit.unit] = Context.MatchQuants
