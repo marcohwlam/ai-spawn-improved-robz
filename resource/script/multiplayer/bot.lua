@@ -649,6 +649,26 @@ function UpdateUnitToSpawn(purchase)
 end
 
 function OnGameStart()
+	-- START_PROBE: dump the BotApi surface so a captured log can show whether the engine
+	-- exposes any player/team count. Speculative fields print "nil" if they do not exist.
+	local inst = BotApi.Instance
+	local nflags, nsquads = 0, 0
+	for _ in pairs(BotApi.Scene.Flags) do nflags = nflags + 1 end
+	for _ in pairs(BotApi.Scene.Squads) do nsquads = nsquads + 1 end
+	print("[AISPAWN] START_PROBE team=" .. tostring(inst.team)
+		.. " enemyTeam=" .. tostring(inst.enemyTeam)
+		.. " army=" .. tostring(inst.army)
+		.. " teamSize=" .. tostring(inst.teamSize)
+		.. " hostId=" .. tostring(inst.hostId)
+		.. " playerId=" .. tostring(inst.playerId)
+		.. " players=" .. tostring(inst.players)
+		.. " playerCount=" .. tostring(inst.playerCount)
+		.. " numPlayers=" .. tostring(inst.numPlayers)
+		.. " teamPlayers=" .. tostring(inst.teamPlayers)
+		.. " teamCount=" .. tostring(inst.teamCount)
+		.. " allies=" .. tostring(inst.allies)
+		.. " flags=" .. tostring(nflags)
+		.. " squads=" .. tostring(nsquads))
 	math.randomseed(os.time() * BotApi.Instance.hostId)
 	math.random() math.random() math.random()
 	Context.Purchase = PIter:new(Purchases)
