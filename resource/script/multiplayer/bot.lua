@@ -78,7 +78,7 @@ local AtRifleCap      = 1       -- max live AT rifles kept
 local QuantsPerSec = 70
 
 local GroupSize = 8   -- target member count per group
-local MaxGroups = 2   -- at most two live groups at a time
+local MaxGroups = 1   -- live groups at a time (1 = single concentrated push; raise for more fronts)
 
 -- Hard ceiling on this bot's OWN live squads (combat fill). The engine is 32-bit (~2GB);
 -- on team games every AI bot runs this script, so per-bot count multiplies. Aux counts 0.5
@@ -370,7 +370,7 @@ function ManageGroups()
 		Context.Groups[1] = { members = {}, size = GroupSize, target = t, pending = 0,
 			phase = CurrentPhase(Context.MatchQuants / QuantsPerSec).name }
 		print("[AISPAWN] GROUP_NEW id=1 target=" .. tostring(t) .. PidTag())
-	elseif not Context.Groups[2]
+	elseif MaxGroups >= 2 and not Context.Groups[2]
 	   and GroupMemberCount(Context.Groups[1]) >= Context.Groups[1].size then
 		local t = PickGroupTarget(Context.Groups[1].target)
 		Context.Groups[2] = { members = {}, size = GroupSize, target = t, pending = 0,
@@ -484,12 +484,22 @@ function LosingBudgetMult()
 	return math.min(1.0 + 0.25 * deficit, 2.5)
 end
 
--- Wave cadence: the further behind on flags, the shorter the gap to the next wave
--- (each flag deficit speeds it up), down to MinWaveInterval. Even/ahead -> full gap.
+-- Wave cadence: base gap scales up by the phase's waveMult (later phases wait longer so MP
+-- banks for pricier units). The further behind on flags, the shorter the gap (each flag
+-- deficit speeds it up), down to MinWaveInterval. Even/ahead -> full phase-scaled gap.
 function WaveIntervalNow()
+	local phase = CurrentPhase(Context.MatchQuants / QuantsPerSec)
+	local base = WaveInterval * (phase.waveMult or 1.0)
 	local deficit = FlagDeficit()
-	if deficit <= 0 then return WaveInterval end
-	return math.max(MinWaveInterval, math.floor(WaveInterval / (1.0 + 0.25 * deficit)))
+	if deficit <= 0 then return base end
+	return math.max(MinWaveInterval, math.floor(base / (1.0 + 0.25 * deficit)))
+end
+
+-- Live-squad ceiling for the current phase (grows +2 per phase). Falls back to the
+-- MaxLiveSquads base if a phase omits squadCap.
+function CurrentSquadCap()
+	local phase = CurrentPhase(Context.MatchQuants / QuantsPerSec)
+	return phase.squadCap or MaxLiveSquads
 end
 
 -- A1 filter: which aux units may spawn right now.
@@ -591,7 +601,11 @@ function GetUnitToSpawn(units)
 		local tier = TierOf(unit)
 		local capOk = (tier == nil) or (TierRank[tier] <= capRank) -- aux not capped
 		local phaseOk = (unit.phase == nil) or (unit.phase == phase.name) -- per-unit phase lock
-		local eliteOk = not (g and unit.elite and GroupEliteCount(g) >= 1)
+		-- Elite infantry only spawns in early. From mid on, tanks dominate the field and
+		-- elite inf just feeds them, so ban elite outside early. In early, still cap at 1/group.
+		local elitePhaseOk = (not unit.elite) or (phase.name == "early")
+		local eliteCapOk = not (g and unit.elite and GroupEliteCount(g) >= 1)
+		local eliteOk = elitePhaseOk and eliteCapOk
 		if affordable and cooled and notRecentlyFailed and capOk and phaseOk and eliteOk then
 			table.insert(pool, unit)
 		end
@@ -833,7 +847,7 @@ function OnGameQuant()
 		if Context.WaveCooldown <= 0 then
 			Context.WaveCooldown = WaveSpawnSpacing
 			Context.FillGroup = GroupToFill()
-			if Context.FillGroup ~= nil and OwnedSquadCount() < MaxLiveSquads then
+			if Context.FillGroup ~= nil and OwnedSquadCount() < CurrentSquadCap() then
 				local r = AttemptSpawn("SPAWN")
 				if r == "ok" then
 					Context.WaveRemaining = Context.WaveRemaining - 1
@@ -880,7 +894,7 @@ function OnGameQuant()
 		elseif Context.BackfillCount >= BackfillInterval then
 			Context.BackfillCount = 0
 			Context.FillGroup = GroupToFill()
-			if Context.FillGroup ~= nil and OwnedSquadCount() < MaxLiveSquads then
+			if Context.FillGroup ~= nil and OwnedSquadCount() < CurrentSquadCap() then
 				AttemptSpawn("BACKFILL")
 			end
 		end
@@ -933,7 +947,7 @@ function OnGameQuant()
 		Context.AtRifleCount = 0
 		if CurrentPhase(Context.MatchQuants / QuantsPerSec).name ~= "early"
 		and LiveAtRifleCount() < AtRifleCap
-		and OwnedSquadCount() < MaxLiveSquads then
+		and OwnedSquadCount() < CurrentSquadCap() then
 			-- Attach to a group: the one being filled, else the first live group. Only spawn
 			-- the AT rifle when a group exists for it to follow.
 			local slot = GroupToFill()

@@ -23,10 +23,13 @@ UnitClass = {
 -- Wave phase config. `upto` is the exclusive upper time bound in seconds; the last
 -- phase uses a huge bound. `targets` is the desired composition weight per tier;
 -- only tiers listed participate. `armorCap` is the heaviest tier allowed to spawn.
+-- `waveMult` stretches the gap between waves as the match matures (early 1.0, mid 1.5,
+-- late 2.25) so the bot banks MP for pricier units instead of dribbling cheap ones to die.
+-- `squadCap` is the per-phase live-squad ceiling (grows +2 per phase as the army gets pricier).
 Phases = {
-	{ name = "early", upto = 180,        targets = {                       light = 1, rifle = 3, smg = 1 }, budget = 12, armorCap = "light"  },
-	{ name = "mid",   upto = 480,        targets = {            medium = 1, light = 2, rifle = 3, smg = 1 }, budget = 20, armorCap = "medium" },
-	{ name = "late",  upto = 1000000000, targets = { heavy = 1, medium = 1, light = 2, rifle = 3, smg = 1 }, budget = 30, armorCap = "heavy"  },
+	{ name = "early", upto = 180,        targets = {                       light = 1, rifle = 3, smg = 1 }, budget = 14, armorCap = "light",  waveMult = 1.0,  squadCap = 24 },
+	{ name = "mid",   upto = 480,        targets = {            medium = 1, light = 2, rifle = 3, smg = 1 }, budget = 22, armorCap = "medium", waveMult = 1.5,  squadCap = 26 },
+	{ name = "late",  upto = 1000000000, targets = { heavy = 1, medium = 1, light = 2, rifle = 3, smg = 1 }, budget = 32, armorCap = "heavy",  waveMult = 2.25, squadCap = 28 },
 }
 
 -- Tier rank for the armorCap gate (higher = heavier). Aux units are not gated here.
