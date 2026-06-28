@@ -1,0 +1,12 @@
+# editor / OS cruft
+*.swp
+*~
+.DS_Store
+
+# local backups and scratch
+*.bak
+*.orig
+/tmp/
+
+# compiled Lua (we only ship source)
+*.luac

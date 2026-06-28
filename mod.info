@@ -1,0 +1,6 @@
+{Mod
+	{Name "AI Spawn Improved for RobZ 1.30.x"}
+	{Desc "Improved bot spawn logic plus AI income boost for RobZ Realism 1.30.x. No entity assets. Overrides bots_generic.inc to raise AI manpower rate and catch-up bonus. Load AFTER RobZ. Based on cbyyy2013 Better AI and frontlines AI concepts."}
+	{MinGameVersion "3.262"}
+	{MaxGameVersion "3.262"}
+}
