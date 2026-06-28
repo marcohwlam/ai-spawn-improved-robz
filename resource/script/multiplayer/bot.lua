@@ -19,6 +19,8 @@ local Context = {
 	NeutralCount = 0,  -- quant countdown for the neutral-capper trickle
 	BackfillCount = 0, -- quant countdown for the between-wave backfill trickle
 	DefenderCount = 0, -- quant countdown for the between-wave MG defender trickle
+	RatioCount = 0,    -- ratio (non-aux) units spawned since the last aux batch
+	AuxOwed = 0,       -- aux units still to inject in the current batch
 	MatchQuants = 0,   -- quant ticks since match start (elapsed-time estimate)
 	LastSpawn = {},    -- unit.unit -> MatchQuants tick of last spawn (recharge tracking)
 	FailCooldown = {}, -- unit.unit -> MatchQuants tick of last FAILED spawn (skip a while)
@@ -60,8 +62,9 @@ local QuantsPerSec = 70
 -- Composition is driven by a core infantry : tank ratio. Auxiliary units do not
 -- count toward the ratio; they are injected up to a cap and filtered by trigger.
 local Ratio      = 4    -- target core infantry per tank (4:1)
-local AuxDivisor = 4    -- aux cap = (M + T) / AuxDivisor  (so aux <= 25% of core army)
-local AuxChance  = 0.3  -- chance to inject an aux unit when under the cap
+-- After each full ratio cycle (sum of the phase's target weights), inject this many
+-- auxiliary units (AT / sniper / flame / MG). Aux never counts toward the ratio.
+local AuxPerCycle = 2
 
 -- Role assignment. Defender classes hold captured flags; everything else pushes
 -- enemy/neutral flags. BotApi has no "hold position" order, so "defend" means the
@@ -331,6 +334,13 @@ function DecideTier(phase, field, enemyHasTanks, tierEligible)
 	return best or "infantry"
 end
 
+-- Number of ratio units in one full composition cycle for a phase (sum of target weights).
+function CycleSize(phase)
+	local n = 0
+	for _, w in pairs(phase.targets) do n = n + w end
+	return n
+end
+
 function GetNextUnitToSpawn(purchase)
 	for attempt = 1, #Purchases do
 		local units = purchase:current()
@@ -377,9 +387,8 @@ function GetUnitToSpawn(units)
 	end
 	if #pool == 0 then return nil end
 
-	-- Aux injection (unchanged mechanism): aux is separate from the four-tier ratio.
+	-- Aux is separate from the four-tier ratio; it is injected on a fixed cycle.
 	local field = GetFieldCounts()
-	local armyCount = field.heavy + field.medium + field.light + field.infantry
 	local function collectAux()
 		local out = {}
 		for i, t in pairs(pool) do
@@ -394,7 +403,8 @@ function GetUnitToSpawn(units)
 		end
 		return out
 	end
-	if field.aux < armyCount / AuxDivisor and math.random() < AuxChance then
+	-- If aux is owed for this cycle, inject one now (skips the four-tier deficit pick).
+	if Context.AuxOwed > 0 then
 		local aux = collectAux()
 		if #aux > 0 then
 			return GetRandomItem(aux, function(t) return t.priority end)
@@ -442,6 +452,8 @@ function OnGameStart()
 	Context.NeutralCount = 0
 	Context.BackfillCount = 0
 	Context.DefenderCount = 0
+	Context.RatioCount = 0
+	Context.AuxOwed = 0
 	Context.Cappers = {}
 	Context.PendingCapper = nil
 	Context.LastSpawn = {}
@@ -477,7 +489,21 @@ function AttemptSpawn(tag)
 		.. " tier=" .. tostring(TierOf(unit))
 		.. " try=" .. tostring(unit.unit)
 		.. " ok=" .. tostring(ok))
-	if not ok then Context.FailCooldown[unit.unit] = Context.MatchQuants end
+	if not ok then
+		Context.FailCooldown[unit.unit] = Context.MatchQuants
+	else
+		-- Advance the ratio/aux cycle on a successful spawn.
+		if TierOf(unit) == nil then
+			if Context.AuxOwed > 0 then Context.AuxOwed = Context.AuxOwed - 1 end
+		else
+			Context.RatioCount = Context.RatioCount + 1
+			local phase = CurrentPhase(Context.MatchQuants / QuantsPerSec)
+			if Context.RatioCount >= CycleSize(phase) then
+				Context.RatioCount = 0
+				Context.AuxOwed = AuxPerCycle
+			end
+		end
+	end
 	UpdateUnitToSpawn(Context.Purchase)
 	if ok then return "ok" else return "fail" end
 end
