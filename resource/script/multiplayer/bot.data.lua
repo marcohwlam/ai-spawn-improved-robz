@@ -17,6 +17,7 @@ UnitClass = {
 	Howitzrer     = "howitzrer",
 	MG            = "mg",
 	Support       = "support",
+	Mortar        = "mortar",
 }
 
 -- Wave phase config. `upto` is the exclusive upper time bound in seconds; the last
@@ -99,6 +100,7 @@ Purchases = {
 				{priority=1.0, class=UnitClass.MG      ,   unit="gd_pzgren_mg(ger)", recharge=0,},
 				{priority=1.0, class=UnitClass.Infantry,   unit="flamers(ger)", recharge=0, flame=true,},
 				{priority=1.0, class=UnitClass.MG      ,   unit="mgs2(ger)", recharge=0,},
+				{priority=0.8, class=UnitClass.Mortar    ,   unit="light_mortar_ger", recharge=0,},
 				{priority=1.0, class=UnitClass.MG      ,   unit="fallschirm_mg_39(ger)", recharge=0,},
 				{priority=1.0, class=UnitClass.MG      ,   unit="stormtrooper6(ger)", recharge=0,},
 				{priority=1.0, class=UnitClass.MG      ,   unit="stormtrooper6_39(ger)", recharge=0,},
@@ -145,6 +147,7 @@ Purchases = {
 				{priority=1.0, class=UnitClass.MG      ,   unit="lssah_pzgren_mg(ger_ss)", recharge=0,},
 				{priority=1.0, class=UnitClass.Infantry,   unit="flamers(ger_ss)", recharge=0, flame=true,},
 				{priority=1.0, class=UnitClass.MG      ,   unit="mgs2(ger_ss)", recharge=0,},
+				{priority=0.8, class=UnitClass.Mortar    ,   unit="5_cm_granatwerfer_36_ss", recharge=0,},
 				{priority=1.0, class=UnitClass.MG      ,   unit="lssah_pzgren_mg_39(ger_ss)", recharge=0,},
 				{priority=1.0, class=UnitClass.MG      ,   unit="tk_pzgren_mg_39(ger_ss)", recharge=0,},
 				{priority=1.0, class=UnitClass.MG      ,   unit="mg2(ger_ss)", recharge=0,},
@@ -265,6 +268,8 @@ Purchases = {
 				{priority=1.0, class=UnitClass.ATInfantry, unit="teishin_at_rifles(jap)", recharge=0,},
 				{priority=1.0, class=UnitClass.Infantry,   unit="flamers(jap)", recharge=0, flame=true,},
 				{priority=1.0, class=UnitClass.MG      ,   unit="mgs2(jap)", recharge=0,},
+				{priority=0.8, class=UnitClass.Mortar    ,   unit="type89mortarinf(jap)", recharge=0,},
+				{priority=0.8, class=UnitClass.Mortar    ,   unit="type89mortarinfx2(jap)", recharge=0,},
 				{priority=1.0, class=UnitClass.MG      ,   unit="mg3(jap)", recharge=0,},
 				{priority=1.0, class=UnitClass.MG      ,   unit="stormtrooper6(jap)", recharge=0,},
 				{priority=2.0, class=UnitClass.Airborne,   unit="elites_drop(jap)", recharge=0,},
@@ -301,6 +306,7 @@ Purchases = {
 				{priority=1.0, class=UnitClass.ATInfantry, unit="at_rifles2(ger2)", recharge=0,},
 				{priority=1.0, class=UnitClass.Infantry,   unit="flamers(ger2)", recharge=0, flame=true,},
 				{priority=1.0, class=UnitClass.MG      ,   unit="mgs2(ger2)", recharge=0,},
+				{priority=0.8, class=UnitClass.Mortar    ,   unit="5_cm_granatwerfer_36_ger2", recharge=0,},
 				{priority=1.0, class=UnitClass.MG      ,   unit="stormtroopers3(ger2)", recharge=0,},
 				{priority=1.5, class=UnitClass.Vehicle,    unit="sdkfz250_1_single", recharge=180,},
 				{priority=1.5, class=UnitClass.Vehicle,    unit="kfz15_gun", recharge=30,},
