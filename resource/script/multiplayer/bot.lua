@@ -16,7 +16,6 @@ local Context = {
 	WaveRemaining = 0, -- units left to attempt in the current wave (0 = idle)
 	WaveFails = 0,     -- consecutive failed Spawns this wave (MP-spent detector)
 	ArmorLead = 0,     -- armor units still to front-load at the current wave's start
-	SmgLead = 0,       -- extra SMG/assault squads to front-load this wave (set when losing)
 	WaveCooldown = 0,  -- quant countdown between spawns within a wave
 	NeutralCount = 0,  -- quant countdown for the neutral-capper trickle
 	BackfillCount = 0, -- quant countdown for the between-wave backfill trickle
@@ -352,9 +351,15 @@ end
 -- Create groups: the 1st whenever none exist; the 2nd only once the 1st is full.
 function ManageGroups()
 	if #Context.Groups == 0 then
-		Context.Groups[1] = { members = {}, size = GroupSize, target = PickGroupTarget(nil) }
+		local t = PickGroupTarget(nil)
+		Context.Groups[1] = { members = {}, size = GroupSize, target = t,
+			phase = CurrentPhase(Context.MatchQuants / QuantsPerSec).name }
+		print("[AISPAWN] GROUP_NEW id=1 target=" .. tostring(t))
 	elseif #Context.Groups == 1 and GroupMemberCount(Context.Groups[1]) >= Context.Groups[1].size then
-		Context.Groups[2] = { members = {}, size = GroupSize, target = PickGroupTarget(Context.Groups[1].target) }
+		local t = PickGroupTarget(Context.Groups[1].target)
+		Context.Groups[2] = { members = {}, size = GroupSize, target = t,
+			phase = CurrentPhase(Context.MatchQuants / QuantsPerSec).name }
+		print("[AISPAWN] GROUP_NEW id=2 target=" .. tostring(t))
 	end
 end
 
@@ -365,13 +370,23 @@ function UpdateGroupTargets()
 	if g1 then
 		local other = g2 and g2.target
 		if not g1.target or not FlagAttackable(g1.target) then
-			g1.target = PickGroupTarget(other)
+			local newT = PickGroupTarget(other)
+			if newT and newT ~= g1.target then
+				print("[AISPAWN] GROUP_TARGET id=1 target=" .. tostring(newT)
+					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority"))
+			end
+			g1.target = newT
 		end
 	end
 	if g2 then
 		local other = g1 and g1.target
 		if not g2.target or not FlagAttackable(g2.target) then
-			g2.target = PickGroupTarget(other)
+			local newT = PickGroupTarget(other)
+			if newT and newT ~= g2.target then
+				print("[AISPAWN] GROUP_TARGET id=2 target=" .. tostring(newT)
+					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority"))
+			end
+			g2.target = newT
 		end
 	end
 end
@@ -392,6 +407,8 @@ function CompactGroups()
 		if GroupMemberCount(g) > 0 then
 			newGroups[#newGroups + 1] = g
 			remap[i] = #newGroups
+		elseif g.seeded then
+			print("[AISPAWN] GROUP_END id=" .. tostring(i))
 		end
 	end
 	Context.Groups = newGroups
@@ -594,19 +611,6 @@ function GetUnitToSpawn(units)
 		end
 	end
 
-	-- SMG lead: when losing, inject the faction's tagged SMG/assault squad if available.
-	if Context.SmgLead > 0 then
-		local smg = nil
-		for i, t in pairs(pool) do
-			if t.smg then smg = t break end
-		end
-		if smg then
-			return smg
-		else
-			Context.SmgLead = 0 -- none available; resume normal selection
-		end
-	end
-
 	-- If aux is owed for this cycle, inject one now (skips the four-tier deficit pick).
 	if Context.AuxOwed > 0 then
 		local aux = collectAux()
@@ -634,7 +638,6 @@ function OnGameStart()
 	Context.WaveRemaining = 0
 	Context.WaveFails = 0
 	Context.ArmorLead = 0
-	Context.SmgLead = 0
 	Context.WaveCooldown = 0
 	Context.NeutralCount = 0
 	Context.BackfillCount = 0
@@ -685,6 +688,19 @@ function AttemptSpawn(tag)
 		.. " tier=" .. tostring(TierOf(unit))
 		.. " try=" .. tostring(unit.unit)
 		.. " ok=" .. tostring(ok))
+	local g = Context.FillGroup and Context.Groups[Context.FillGroup]
+	if g then
+		local pname = CurrentPhase(Context.MatchQuants / QuantsPerSec).name
+		if g.phase ~= pname then
+			g.phase = pname
+			print("[AISPAWN] GROUP_UP id=" .. tostring(Context.FillGroup) .. " phase=" .. pname)
+		end
+		print("[AISPAWN] GROUP_FILL id=" .. tostring(Context.FillGroup)
+			.. " tier=" .. tostring(TierOf(unit))
+			.. " try=" .. tostring(unit.unit)
+			.. " ok=" .. tostring(ok)
+			.. " size=" .. tostring(GroupMemberCount(g)) .. "/" .. tostring(g.size))
+	end
 	if not ok then
 		Context.FailCooldown[unit.unit] = Context.MatchQuants
 	else
@@ -695,9 +711,6 @@ function AttemptSpawn(tag)
 			local utier = TierOf(unit)
 			if Context.ArmorLead > 0 and (utier == "heavy" or utier == "medium") then
 				Context.ArmorLead = Context.ArmorLead - 1
-			end
-			if Context.SmgLead > 0 and unit.smg then
-				Context.SmgLead = Context.SmgLead - 1
 			end
 			Context.RatioCount = Context.RatioCount + 1
 			local phase = CurrentPhase(Context.MatchQuants / QuantsPerSec)
@@ -738,8 +751,6 @@ function OnGameQuant()
 		Context.WaveCooldown = 0
 		-- Front-load the phase's armor quota (heaviest first) before the ratio picker.
 		Context.ArmorLead = (phase.targets.heavy or 0) + (phase.targets.medium or 0)
-		-- When losing, also front-load one extra SMG/assault squad.
-		Context.SmgLead = (FlagDeficit() > 0) and 1 or 0
 		ManageGroups()
 		print("[AISPAWN] WAVE mq=" .. tostring(Context.MatchQuants)
 			.. " t=" .. tostring(math.floor(Context.MatchQuants / QuantsPerSec))
@@ -969,6 +980,7 @@ function OnGameSpawn(args)
 			Context.LastSpawn[Context.SpawnInfo.unit] = Context.MatchQuants
 			if Context.PendingGroup and Context.Groups[Context.PendingGroup] then
 				Context.Groups[Context.PendingGroup].members[args.squadId] = true
+				Context.Groups[Context.PendingGroup].seeded = true
 				Context.SquadGroup[args.squadId] = Context.PendingGroup
 			end
 			Context.PendingGroup = nil
