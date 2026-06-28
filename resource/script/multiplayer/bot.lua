@@ -15,6 +15,7 @@ local Context = {
 	QuantCount = 0,    -- quant ticks since the last wave started (wave cadence)
 	WaveRemaining = 0, -- units left to attempt in the current wave (0 = idle)
 	WaveFails = 0,     -- consecutive failed Spawns this wave (MP-spent detector)
+	ArmorLead = 0,     -- armor units still to front-load at the current wave's start
 	WaveCooldown = 0,  -- quant countdown between spawns within a wave
 	NeutralCount = 0,  -- quant countdown for the neutral-capper trickle
 	BackfillCount = 0, -- quant countdown for the between-wave backfill trickle
@@ -430,14 +431,6 @@ function GetUnitToSpawn(units)
 		end
 		return out
 	end
-	-- If aux is owed for this cycle, inject one now (skips the four-tier deficit pick).
-	if Context.AuxOwed > 0 then
-		local aux = collectAux()
-		if #aux > 0 then
-			return GetRandomItem(aux, function(t) return t.priority end)
-		end
-	end
-
 	-- Which tiers have a candidate in the pool right now?
 	local tierEligible, byTier = {}, { heavy = {}, medium = {}, light = {}, infantry = {} }
 	for i, t in pairs(pool) do
@@ -448,11 +441,8 @@ function GetUnitToSpawn(units)
 		end
 	end
 
-	local tier = DecideTier(phase, field, enemyHasTanks, tierEligible)
-	local cands = byTier[tier]
-	if not cands or #cands == 0 then cands = pool end
-
-	return GetRandomItem(cands, function(t)
+	-- Shared weighting: lean toward the strongest / most relevant pick within a tier.
+	local function weightOf(t)
 		local mul = 1.0
 		if enemyHasTanks then
 			if t.class == UnitClass.HeavyTank then mul = mul * 1.5
@@ -460,7 +450,32 @@ function GetUnitToSpawn(units)
 			elseif t.class == UnitClass.ATInfantry then mul = mul * 1.5 end
 		end
 		return t.priority * mul
-	end)
+	end
+
+	-- Armor lead: at the wave's start, spawn the heaviest available armor tier first.
+	if Context.ArmorLead > 0 then
+		local lead = nil
+		if #byTier.heavy > 0 then lead = "heavy"
+		elseif #byTier.medium > 0 then lead = "medium" end
+		if lead then
+			return GetRandomItem(byTier[lead], weightOf)
+		else
+			Context.ArmorLead = 0 -- no armor available; resume normal selection
+		end
+	end
+
+	-- If aux is owed for this cycle, inject one now (skips the four-tier deficit pick).
+	if Context.AuxOwed > 0 then
+		local aux = collectAux()
+		if #aux > 0 then
+			return GetRandomItem(aux, function(t) return t.priority end)
+		end
+	end
+
+	local tier = DecideTier(phase, field, enemyHasTanks, tierEligible)
+	local cands = byTier[tier]
+	if not cands or #cands == 0 then cands = pool end
+	return GetRandomItem(cands, weightOf)
 end
 
 function UpdateUnitToSpawn(purchase)
@@ -475,6 +490,7 @@ function OnGameStart()
 	Context.MatchQuants = 0
 	Context.WaveRemaining = 0
 	Context.WaveFails = 0
+	Context.ArmorLead = 0
 	Context.WaveCooldown = 0
 	Context.NeutralCount = 0
 	Context.BackfillCount = 0
@@ -524,6 +540,10 @@ function AttemptSpawn(tag)
 		if TierOf(unit) == nil then
 			if Context.AuxOwed > 0 then Context.AuxOwed = Context.AuxOwed - 1 end
 		else
+			local utier = TierOf(unit)
+			if Context.ArmorLead > 0 and (utier == "heavy" or utier == "medium") then
+				Context.ArmorLead = Context.ArmorLead - 1
+			end
 			Context.RatioCount = Context.RatioCount + 1
 			local phase = CurrentPhase(Context.MatchQuants / QuantsPerSec)
 			if Context.RatioCount >= CycleSize(phase) then
@@ -549,6 +569,8 @@ function OnGameQuant()
 		Context.WaveRemaining = budget
 		Context.WaveFails = 0
 		Context.WaveCooldown = 0
+		-- Front-load the phase's armor quota (heaviest first) before the ratio picker.
+		Context.ArmorLead = (phase.targets.heavy or 0) + (phase.targets.medium or 0)
 		print("[AISPAWN] WAVE mq=" .. tostring(Context.MatchQuants)
 			.. " t=" .. tostring(math.floor(Context.MatchQuants / QuantsPerSec))
 			.. " phase=" .. phase.name .. " budget=" .. tostring(budget)
