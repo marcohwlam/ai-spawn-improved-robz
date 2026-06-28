@@ -34,7 +34,7 @@ local Context = {
 -- unit landed and the rest were rejected, leaving 3000+ MP unspent at game end).
 -- Each wave attempts up to phase.budget units, one every WaveSpawnSpacing quants,
 -- and ends early only after MaxWaveFails spawns in a row fail (= truly out of MP).
-local WaveInterval    = 30 * 70 -- quants between wave starts (~30s at ~70 quant/sec)
+local WaveInterval    = 60 * 70 -- quants between wave starts (~60s at ~70 quant/sec)
 local MinWaveInterval = 10 * 70 -- floor: never faster than ~10s even when far behind
 local WaveSpawnSpacing = 7      -- quants between spawns inside a wave (~0.1s)
 local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spent, end wave
@@ -203,17 +203,18 @@ function GetLineUnit()
 	return GetRandomItem(lines, function(t) return t.priority end)
 end
 
--- A mobile MG team (mgs2/mg2) from the current faction roster, for point defense.
--- Some factions have more than one; pick at random for variety. Returns nil if none.
+-- The defender MG: use the cheapest MG only (the basic mgs2 team). Falls back to any
+-- MG if a faction has no mgs2.
 function GetMGUnit()
 	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]
 	if not roster then return nil end
-	local mgs = {}
 	for i, t in pairs(roster) do
-		if t.class == UnitClass.MG then table.insert(mgs, t) end
+		if t.class == UnitClass.MG and string.find(t.unit, "mgs2", 1, true) then return t end
 	end
-	if #mgs == 0 then return nil end
-	return GetRandomItem(mgs, function(t) return t.priority end)
+	for i, t in pairs(roster) do
+		if t.class == UnitClass.MG then return t end
+	end
+	return nil
 end
 
 -- Flags we currently own (something worth defending).
@@ -257,7 +258,7 @@ end
 -- returns nil and never counts toward the ratio.
 function TierOf(t)
 	if t.class == UnitClass.Infantry and not t.flame then
-		return "infantry"
+		if t.mech then return "light" else return "infantry" end -- mech inf rides a vehicle -> light
 	elseif t.class == UnitClass.HeavyTank then
 		return "heavy"
 	elseif t.class == UnitClass.Tank then
