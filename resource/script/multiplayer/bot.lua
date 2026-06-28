@@ -81,6 +81,12 @@ local QuantsPerSec = 70
 local GroupSize = 8   -- target member count per group
 local MaxGroups = 2   -- at most two live groups at a time
 
+-- Hard ceiling on this bot's OWN live squads (combat fill). The engine is 32-bit (~2GB);
+-- on team games every AI bot runs this script, so per-bot count multiplies. 12 combat +
+-- the capped trickles (MG<=3, officer<=1, AT<=1, cappers) keeps a 6-bot game well under the
+-- ~200-squad level that OOM'd the engine. Tune per typical match size.
+local MaxLiveSquads = 12
+
 -- Composition is driven by a core infantry : tank ratio. Auxiliary units do not
 -- count toward the ratio; they are injected up to a cap and filtered by trigger.
 local Ratio      = 4    -- target core infantry per tank (4:1)
@@ -421,6 +427,18 @@ end
 function LiveSquadCount()
 	local n = 0
 	for _ in pairs(BotApi.Scene.Squads) do n = n + 1 end
+	return n
+end
+
+-- Count this bot's own live squads (units we spawned and still track). This is the memory
+-- footprint we can actually bound; LiveSquadCount() counts the whole scene and must not be
+-- used for the cap. Aux units (TierOf == nil: MG, AT, sniper, officer, etc.) count as 0.5
+-- since they have their own small caps and cost less headroom.
+function OwnedSquadCount()
+	local n = 0
+	for squadId, entry in pairs(Context.FieldUnits) do
+		if TierOf(entry) == nil then n = n + 0.5 else n = n + 1 end
+	end
 	return n
 end
 
@@ -767,8 +785,8 @@ function OnGameQuant()
 		if Context.WaveCooldown <= 0 then
 			Context.WaveCooldown = WaveSpawnSpacing
 			Context.FillGroup = GroupToFill()
-			Context.PendingGroup = Context.FillGroup
-			if Context.FillGroup ~= nil then
+			if Context.FillGroup ~= nil and OwnedSquadCount() < MaxLiveSquads then
+				Context.PendingGroup = Context.FillGroup
 				local r = AttemptSpawn("SPAWN")
 				if r == "ok" then
 					Context.WaveRemaining = Context.WaveRemaining - 1
@@ -812,7 +830,7 @@ function OnGameQuant()
 		elseif Context.BackfillCount >= BackfillInterval then
 			Context.BackfillCount = 0
 			Context.FillGroup = GroupToFill()
-			if Context.FillGroup ~= nil then
+			if Context.FillGroup ~= nil and OwnedSquadCount() < MaxLiveSquads then
 				Context.PendingGroup = Context.FillGroup
 				AttemptSpawn("BACKFILL")
 			end
@@ -957,9 +975,11 @@ function SetSquadOrder(order, squad, delay)
 	local setTimer = function(callback)
 		Context.SquadTimers[squad] = BotApi.Events:SetQuantTimer(
 			function()
-				order(squad)
 				Context.SquadTimers[squad] = nil
-				if BotApi.Scene:IsSquadExists(squad) then callback(callback) end
+				if BotApi.Scene:IsSquadExists(squad) then
+					order(squad)
+					callback(callback)
+				end
 			end, delay)
 	end
 	setTimer(setTimer)
