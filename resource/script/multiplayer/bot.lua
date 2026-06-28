@@ -408,7 +408,8 @@ function GetUnitToSpawn(units)
 			or (Context.MatchQuants - failed >= FailCooldownQuants)
 		local tier = TierOf(unit)
 		local capOk = (tier == nil) or (TierRank[tier] <= capRank) -- aux not capped
-		if affordable and cooled and notRecentlyFailed and capOk then
+		local phaseOk = (unit.phase == nil) or (unit.phase == phase.name) -- per-unit phase lock
+		if affordable and cooled and notRecentlyFailed and capOk and phaseOk then
 			table.insert(pool, unit)
 		end
 	end
