@@ -284,11 +284,13 @@ function LiveAtRifleCount()
 	return n
 end
 
--- Four-tier classification. Aux (AT, MG, sniper, officer, AA, artillery, flamer)
+-- Five-tier classification. Aux (AT, MG, sniper, officer, AA, artillery, flamer)
 -- returns nil and never counts toward the ratio.
 function TierOf(t)
 	if t.class == UnitClass.Infantry and not t.flame then
-		if t.mech then return "light" else return "infantry" end -- mech inf rides a vehicle -> light
+		if t.mech then return "light"
+		elseif t.inf == "smg" then return "smg"
+		else return "rifle" end
 	elseif t.class == UnitClass.HeavyTank then
 		return "heavy"
 	elseif t.class == UnitClass.Tank then
@@ -301,7 +303,7 @@ function TierOf(t)
 end
 
 function GetFieldCounts()
-	local c = { heavy = 0, medium = 0, light = 0, infantry = 0, aux = 0, total = 0 }
+	local c = { heavy = 0, medium = 0, light = 0, rifle = 0, smg = 0, aux = 0, total = 0 }
 	for squadId, entry in pairs(Context.FieldUnits) do
 		if not Context.Cappers[squadId] then
 			c.total = c.total + 1
@@ -370,17 +372,20 @@ end
 
 -- Choose the tier whose share is furthest below its target, among phase-allowed tiers
 -- that actually have a spawnable candidate. enemyHasTanks adds a small armor lean.
--- Pure: all inputs passed in, no BotApi/Context reads.
-function DecideTier(phase, field, enemyHasTanks, tierEligible)
+-- losing bumps the smg weight to 2. Pure: all inputs passed in, no BotApi/Context reads.
+function DecideTier(phase, field, enemyHasTanks, tierEligible, losing)
 	local targets = phase.targets
 	local totalT = 0
-	for _, w in pairs(targets) do totalT = totalT + w end
+	for tier, w in pairs(targets) do
+		totalT = totalT + ((losing and tier == "smg") and 2 or w)
+	end
 	local totalF = 0
 	for tier in pairs(targets) do totalF = totalF + (field[tier] or 0) end
 
 	local best, bestDeficit = nil, -1e9
 	for tier, w in pairs(targets) do
-		local targetShare = w / totalT
+		local ew = (losing and tier == "smg") and 2 or w
+		local targetShare = ew / totalT
 		local actualShare = (totalF > 0) and ((field[tier] or 0) / totalF) or 0
 		local deficit = targetShare - actualShare
 		if enemyHasTanks and (tier == "medium" or tier == "heavy") then
@@ -390,7 +395,7 @@ function DecideTier(phase, field, enemyHasTanks, tierEligible)
 			best, bestDeficit = tier, deficit
 		end
 	end
-	return best or "infantry"
+	return best or "rifle"
 end
 
 -- Number of ratio units in one full composition cycle for a phase (sum of target weights).
@@ -465,7 +470,7 @@ function GetUnitToSpawn(units)
 		return out
 	end
 	-- Which tiers have a candidate in the pool right now?
-	local tierEligible, byTier = {}, { heavy = {}, medium = {}, light = {}, infantry = {} }
+	local tierEligible, byTier = {}, { heavy = {}, medium = {}, light = {}, rifle = {}, smg = {} }
 	for i, t in pairs(pool) do
 		local tier = TierOf(t)
 		if tier then
@@ -518,7 +523,7 @@ function GetUnitToSpawn(units)
 		end
 	end
 
-	local tier = DecideTier(phase, field, enemyHasTanks, tierEligible)
+	local tier = DecideTier(phase, field, enemyHasTanks, tierEligible, FlagDeficit() > 0)
 	local cands = byTier[tier]
 	if not cands or #cands == 0 then cands = pool end
 	return GetRandomItem(cands, weightOf)
@@ -578,7 +583,8 @@ function AttemptSpawn(tag)
 		.. " H=" .. tostring(field.heavy)
 		.. " Md=" .. tostring(field.medium)
 		.. " L=" .. tostring(field.light)
-		.. " I=" .. tostring(field.infantry)
+		.. " R=" .. tostring(field.rifle)
+		.. " S=" .. tostring(field.smg)
 		.. " A=" .. tostring(field.aux)
 		.. " tier=" .. tostring(TierOf(unit))
 		.. " try=" .. tostring(unit.unit)
