@@ -74,3 +74,35 @@ eq(ec.smg,   0, "CountByTier empty group smg=0")
 eq(GroupMemberCount(emptyGroup), 0, "GroupMemberCount empty=0")
 eq(GroupEliteCount(emptyGroup),  0, "GroupEliteCount empty=0")
 print("group helpers OK")
+
+-- PickGroupTarget: enemy-only, excludeName respected, nil when no enemies
+do
+	local savedFlags = BotApi.Scene.Flags
+	local savedInst  = BotApi.Instance
+	BotApi.Instance = { team = 1, enemyTeam = 2, army = "ger", teamSize = 8, hostId = 1, playerId = 1 }
+	BotApi.Scene.Flags = {
+		{ name = "alpha",   occupant = 2 },  -- enemy
+		{ name = "bravo",   occupant = 2 },  -- enemy
+		{ name = "neutral", occupant = 3 },  -- neutral (occupant ~= 1 and ~= 2)
+		{ name = "owned",   occupant = 1 },  -- ours
+	}
+	local t = PickGroupTarget(nil)
+	assert(t == "alpha" or t == "bravo",
+		"PickGroupTarget returns an enemy flag, got " .. tostring(t))
+
+	-- excludeName: when alpha is excluded, only bravo is a valid enemy
+	local t2 = PickGroupTarget("alpha")
+	eq(t2, "bravo", "PickGroupTarget excludes alpha")
+
+	-- No enemy flags -> nil
+	BotApi.Scene.Flags = {
+		{ name = "neutral", occupant = 3 },
+		{ name = "owned",   occupant = 1 },
+	}
+	local t3 = PickGroupTarget(nil)
+	eq(t3, nil, "PickGroupTarget returns nil when no enemy flags")
+
+	BotApi.Scene.Flags = savedFlags
+	BotApi.Instance    = savedInst
+end
+print("PickGroupTarget OK")

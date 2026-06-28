@@ -4,8 +4,6 @@ local Context = {
 	Purchase = nil,
 	SpawnInfo = nil,
 	SquadTimers = {},
-	SquadTarget = {},  -- squadId -> flag name assigned for its wave (shared wave target)
-	WaveTarget = nil,  -- the current wave's shared attack flag name
 	FieldUnits = {},  -- squadId -> unit entry, tracks live units we spawned
 	SpawnFlags = {
 		isAirborne = false,
@@ -34,6 +32,8 @@ local Context = {
 	MatchQuants = 0,   -- quant ticks since match start (elapsed-time estimate)
 	LastSpawn = {},    -- unit.unit -> MatchQuants tick of last spawn (recharge tracking)
 	FailCooldown = {}, -- unit.unit -> MatchQuants tick of last FAILED spawn (skip a while)
+	PrevOwned = {},    -- flag name -> true if we owned it last tick
+	LostStamp = {},    -- flag name -> MatchQuants when we lost it (recapture priority)
 }
 
 -- Wave spawning. The engine accepts at most ~1 Spawn per quant tick, so a wave
@@ -352,9 +352,27 @@ end
 -- Create groups: the 1st whenever none exist; the 2nd only once the 1st is full.
 function ManageGroups()
 	if #Context.Groups == 0 then
-		Context.Groups[1] = { members = {}, size = GroupSize }
+		Context.Groups[1] = { members = {}, size = GroupSize, target = PickGroupTarget(nil) }
 	elseif #Context.Groups == 1 and GroupMemberCount(Context.Groups[1]) >= Context.Groups[1].size then
-		Context.Groups[2] = { members = {}, size = GroupSize }
+		Context.Groups[2] = { members = {}, size = GroupSize, target = PickGroupTarget(Context.Groups[1].target) }
+	end
+end
+
+-- Refresh each group's target: if nil or the flag is gone, re-pick de-conflicted from the other.
+function UpdateGroupTargets()
+	local g1 = Context.Groups[1]
+	local g2 = Context.Groups[2]
+	if g1 then
+		local other = g2 and g2.target
+		if not g1.target or not FlagAttackable(g1.target) then
+			g1.target = PickGroupTarget(other)
+		end
+	end
+	if g2 then
+		local other = g1 and g1.target
+		if not g2.target or not FlagAttackable(g2.target) then
+			g2.target = PickGroupTarget(other)
+		end
 	end
 end
 
@@ -629,8 +647,8 @@ function OnGameStart()
 	Context.PendingCapper = nil
 	Context.LastSpawn = {}
 	Context.FailCooldown = {}
-	Context.SquadTarget = {}
-	Context.WaveTarget = nil
+	Context.PrevOwned = {}
+	Context.LostStamp = {}
 	Context.Groups = {}
 	Context.SquadGroup = {}
 	Context.FillGroup = nil
@@ -697,6 +715,18 @@ function OnGameQuant()
 	Context.MatchQuants = Context.MatchQuants + 1
 	Context.QuantCount = Context.QuantCount + 1
 
+	-- Track flags we just lost (were ours last tick, now enemy) for recapture priority.
+	for i, flag in pairs(BotApi.Scene.Flags) do
+		local ownedNow = (flag.occupant == BotApi.Instance.team)
+		if Context.PrevOwned[flag.name] and flag.occupant == BotApi.Instance.enemyTeam then
+			Context.LostStamp[flag.name] = Context.MatchQuants
+		end
+		Context.PrevOwned[flag.name] = ownedNow
+	end
+
+	-- Refresh group targets each quant (re-pick if gone or nil).
+	UpdateGroupTargets()
+
 	-- Start a wave every WaveIntervalNow() quants (shorter when losing; only when
 	-- no wave is in progress).
 	if Context.QuantCount >= WaveIntervalNow() and Context.WaveRemaining == 0 then
@@ -706,7 +736,6 @@ function OnGameQuant()
 		Context.WaveRemaining = budget
 		Context.WaveFails = 0
 		Context.WaveCooldown = 0
-		Context.WaveTarget = PickWaveTarget() -- this wave's shared attack flag
 		-- Front-load the phase's armor quota (heaviest first) before the ratio picker.
 		Context.ArmorLead = (phase.targets.heavy or 0) + (phase.targets.medium or 0)
 		-- When losing, also front-load one extra SMG/assault squad.
@@ -845,7 +874,6 @@ function OnGameQuant()
 			Context.SquadGroup[squadId] = nil
 			Context.FieldUnits[squadId] = nil
 			Context.Cappers[squadId] = nil
-			Context.SquadTarget[squadId] = nil
 		end
 	end
 	CompactGroups()
@@ -870,36 +898,45 @@ function FlagAttackable(name)
 	return false
 end
 
--- The single best attack target for a wave: highest-priority enemy/neutral flag, or nil.
-function PickWaveTarget()
-	local best, bestK = nil, -1
+-- The group's attack flag: an ENEMY-held flag (never neutral), most-recently-lost first,
+-- excluding excludeName (the other group's target). Returns a flag name, or nil.
+function PickGroupTarget(excludeName)
+	local best, bestStamp, bestK = nil, -1, -1
 	for i, flag in pairs(BotApi.Scene.Flags) do
-		if flag.occupant ~= BotApi.Instance.team then
-			local k = GetFlagPriority(flag)
-			if k > bestK then best, bestK = flag.name, k end
+		if flag.occupant == BotApi.Instance.enemyTeam and flag.name ~= excludeName then
+			local stamp = Context.LostStamp[flag.name]
+			if stamp ~= nil then
+				if stamp > bestStamp then best, bestStamp = flag.name, stamp end
+			elseif bestStamp < 0 then
+				local k = GetFlagPriority(flag)
+				if k > bestK then best, bestK = flag.name, k end
+			end
 		end
 	end
 	return best
 end
 
 function CaptureFlag(squad)
-	-- Cappers chase neutral flags; defenders hold owned flags -- both unchanged.
+	-- Group members: attack the group's shared target (membership overrides class role).
+	local gi = Context.SquadGroup[squad]
+	if gi and Context.Groups[gi] and Context.Groups[gi].target
+	   and FlagAttackable(Context.Groups[gi].target) then
+		BotApi.Commands:CaptureFlag(squad, Context.Groups[gi].target)
+		return
+	end
+	-- Cappers chase neutral flags (trickle; never group members).
 	if Context.Cappers[squad] then
 		local flag = GetFlagToCapture(BotApi.Scene.Flags, CapperFlagPriority)
 		if flag then BotApi.Commands:CaptureFlag(squad, flag.name) end
 		return
 	end
+	-- Defenders (MG, AT, sniper, etc.) hold owned flags.
 	if IsDefender(squad) then
 		local flag = GetFlagToCapture(BotApi.Scene.Flags, DefenderFlagPriority)
 		if flag then BotApi.Commands:CaptureFlag(squad, flag.name) end
 		return
 	end
-	-- Combat unit: stick to its wave's shared target while it is still attackable.
-	local tgt = Context.SquadTarget[squad]
-	if tgt and FlagAttackable(tgt) then
-		BotApi.Commands:CaptureFlag(squad, tgt)
-		return
-	end
+	-- Fallback: best flag by priority.
 	local flag = GetFlagToCapture(BotApi.Scene.Flags, GetFlagPriority)
 	if flag then BotApi.Commands:CaptureFlag(squad, flag.name) end
 end
@@ -941,7 +978,6 @@ function OnGameSpawn(args)
 	-- else gets a capture order.
 	local entry = Context.FieldUnits[args.squadId]
 	if not (entry and entry.class == UnitClass.Officer) then
-		Context.SquadTarget[args.squadId] = Context.WaveTarget
 		SetSquadOrder(CaptureFlag, args.squadId, OrderRotationPeriod)
 	end
 end
