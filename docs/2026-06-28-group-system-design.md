@@ -22,9 +22,9 @@ ratio/recharge/fail-cooldown/armor-lead machinery is reused inside the group sel
 - The four standalone trickles (neutral-flag capper, MG point-defender, officer keep-alive,
   AT-rifle keep-alive) stay **outside** the group system, unchanged.
 
-**Locked parameters:** group size = 8 · max 2 groups · one new group per wave until 2 ·
-rifle:smg = 3:1 (3:2 when losing) · max 1 elite infantry per group · groups attack
-de-conflicted targets (recapture-first, never neutral).
+**Locked parameters:** group size = 8 · max 2 groups · **the 2nd group is created only once
+the 1st is full (8 live members)** · rifle:smg = 3:1 (3:2 when losing) · max 1 elite
+infantry per group · groups attack de-conflicted targets (recapture-first, never neutral).
 
 ---
 
@@ -101,7 +101,12 @@ currently being filled (an aux member counts as `nil` tier, does not fill a rati
 
 ```
  wave fires (every WaveIntervalNow):
-   if #Groups < 2  -> create Group{ size=8, members={}, target=PickGroupTarget(exclude others) }
+   # create at most one more group, and only when there is room:
+   #   - 0 groups            -> create the 1st
+   #   - 1 group AND it is full (members == size) -> create the 2nd
+   if #Groups == 0
+   or (#Groups == 1 and #Groups[1].members == Groups[1].size)
+        -> create Group{ size=8, members={}, target=PickGroupTarget(exclude others) }
    for each Group g (spread across quants, within wave budget):
        while #g.members < g.size and budget:
            tier  = DecideTier(phase, countByTier(g.members), enemyHasTanks, eligible)
