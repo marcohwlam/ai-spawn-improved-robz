@@ -83,10 +83,10 @@ local MaxGroups = 2   -- at most two live groups at a time
 
 -- Hard ceiling on this bot's OWN live squads (combat fill). The engine is 32-bit (~2GB);
 -- on team games every AI bot runs this script, so per-bot count multiplies. Aux counts 0.5
--- (see OwnedSquadCount), so 18 is roughly 18 combat or up to ~24-30 mixed squads. With the
--- capped trickles (MG<=3, officer<=1, AT<=1, cappers) a 6-bot game stays under the ~200-squad
--- level that OOM'd the engine, with less margin than 12. Tune per typical match size.
-local MaxLiveSquads = 18
+-- (see OwnedSquadCount), so 24 is roughly 24 combat or up to ~32-40 mixed squads. Sized for
+-- 2v2 (<=4 bots): ~96 weighted / ~130-160 real squads, under the ~200-squad level that OOM'd
+-- the 32-bit engine. Lower this if playing larger team games. Tune per typical match size.
+local MaxLiveSquads = 24
 
 -- Composition is driven by a core infantry : tank ratio. Auxiliary units do not
 -- count toward the ratio; they are injected up to a cap and filtered by trigger.
