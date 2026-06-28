@@ -916,23 +916,39 @@ function OnGameQuant()
 		end
 	end
 
-	-- AT-rifle keep-alive: from mid phase on, keep one AT rifle fielded (anti half-track).
+	-- AT-rifle keep-alive: from mid phase on, keep one AT rifle fielded as a GROUP member so it
+	-- moves with and escorts the platoon (anti half-track) instead of wandering alone.
 	Context.AtRifleCount = Context.AtRifleCount + 1
 	if Context.AtRifleCount >= AtRifleInterval then
 		Context.AtRifleCount = 0
 		if CurrentPhase(Context.MatchQuants / QuantsPerSec).name ~= "early"
-		and LiveAtRifleCount() < AtRifleCap then
-			local atr = GetAtRifleUnit()
-			if atr then
-				Context.SpawnInfo = atr
-				local ok = BotApi.Commands:Spawn(atr.unit, MaxSquadSize)
-				print("[AISPAWN] ATRIFLE try=" .. tostring(atr.unit) .. " ok=" .. tostring(ok))
-				if ok then
-					Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "trickle", info = atr }
-				else
-					Context.FailCooldown[atr.unit] = Context.MatchQuants
+		and LiveAtRifleCount() < AtRifleCap
+		and OwnedSquadCount() < MaxLiveSquads then
+			-- Attach to a group: the one being filled, else the first live group. Only spawn
+			-- the AT rifle when a group exists for it to follow.
+			local slot = GroupToFill()
+			if not slot then
+				for i = 1, MaxGroups do
+					if Context.Groups[i] then slot = i; break end
 				end
-				UpdateUnitToSpawn(Context.Purchase)
+			end
+			local g = slot and Context.Groups[slot]
+			if g then
+				local atr = GetAtRifleUnit()
+				if atr then
+					Context.SpawnInfo = atr
+					local ok = BotApi.Commands:Spawn(atr.unit, MaxSquadSize)
+					print("[AISPAWN] ATRIFLE try=" .. tostring(atr.unit)
+						.. " ok=" .. tostring(ok) .. " group=" .. tostring(slot))
+					if ok then
+						g.pending = (g.pending or 0) + 1
+						Context.SpawnQueue[#Context.SpawnQueue + 1] =
+							{ kind = "group", info = atr, slot = slot }
+					else
+						Context.FailCooldown[atr.unit] = Context.MatchQuants
+					end
+					UpdateUnitToSpawn(Context.Purchase)
+				end
 			end
 		end
 	end
