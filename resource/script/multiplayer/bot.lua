@@ -19,6 +19,7 @@ local Context = {
 	NeutralCount = 0,  -- quant countdown for the neutral-capper trickle
 	BackfillCount = 0, -- quant countdown for the between-wave backfill trickle
 	DefenderCount = 0, -- quant countdown for the between-wave MG defender trickle
+	OfficerCount = 0,  -- quant countdown for the officer keep-alive trickle
 	RatioCount = 0,    -- ratio (non-aux) units spawned since the last aux batch
 	AuxOwed = 0,       -- aux units still to inject in the current batch
 	MatchQuants = 0,   -- quant ticks since match start (elapsed-time estimate)
@@ -53,6 +54,12 @@ local BackfillInterval = 3 * 70 -- ~3s between idle backfill spawns
 -- sent to dig in on owned flags. Only fires while idle and only when we hold ground.
 local DefenderInterval = 20 * 70 -- ~20s between defender checks
 local DefenderCap      = 3       -- max live MG teams the bot keeps fielded
+
+-- Officer keep-alive: after OfficerUnlock seconds, keep up to OfficerCap officers parked
+-- at the spawn (no capture order) -- they hold the unit cap and must not die at the front.
+local OfficerUnlock   = 600     -- seconds before officers become available (~10 min)
+local OfficerInterval = 30 * 70 -- quants between officer checks (~30s)
+local OfficerCap      = 1       -- max live officers
 
 -- Quant rate, measured ~70/sec. Only used to print an elapsed-seconds estimate
 -- in the debug log (mq -> t). Unit unlocks are left entirely to the engine, so
@@ -221,6 +228,25 @@ function LiveMGCount()
 	local n = 0
 	for squadId, entry in pairs(Context.FieldUnits) do
 		if entry.class == UnitClass.MG then n = n + 1 end
+	end
+	return n
+end
+
+-- An officer unit from the current faction roster (parked at spawn for the cap), or nil.
+function GetOfficerUnit()
+	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]
+	if not roster then return nil end
+	for i, t in pairs(roster) do
+		if t.class == UnitClass.Officer then return t end
+	end
+	return nil
+end
+
+-- Live officers we have fielded (the officer cap).
+function LiveOfficerCount()
+	local n = 0
+	for squadId, entry in pairs(Context.FieldUnits) do
+		if entry.class == UnitClass.Officer then n = n + 1 end
 	end
 	return n
 end
@@ -396,7 +422,8 @@ function GetUnitToSpawn(units)
 				if not (t.class == UnitClass.Airborne and Context.SpawnFlags.isAirborne)
 				and not (t.class == UnitClass.Rare and Context.SpawnFlags.isRare)
 				and t.class ~= UnitClass.Howitzrer
-				and t.class ~= UnitClass.ArtilleryTank then -- SPGs disabled (poor bot AI use)
+				and t.class ~= UnitClass.ArtilleryTank   -- SPGs disabled (poor bot AI use)
+				and t.class ~= UnitClass.Officer then    -- officers are parked by their own trickle
 					table.insert(out, t)
 				end
 			end
@@ -452,6 +479,7 @@ function OnGameStart()
 	Context.NeutralCount = 0
 	Context.BackfillCount = 0
 	Context.DefenderCount = 0
+	Context.OfficerCount = 0
 	Context.RatioCount = 0
 	Context.AuxOwed = 0
 	Context.Cappers = {}
@@ -594,6 +622,25 @@ function OnGameQuant()
 		end
 	end
 
+	-- Officer keep-alive trickle: after the unlock, maintain OfficerCap officers parked
+	-- at the spawn. They are spawned here (never via the ratio/aux pool) so OnGameSpawn
+	-- can withhold their capture order and leave them safe in the rear.
+	Context.OfficerCount = Context.OfficerCount + 1
+	if Context.OfficerCount >= OfficerInterval then
+		Context.OfficerCount = 0
+		if Context.MatchQuants / QuantsPerSec >= OfficerUnlock
+		and LiveOfficerCount() < OfficerCap then
+			local off = GetOfficerUnit()
+			if off then
+				Context.SpawnInfo = off
+				local ok = BotApi.Commands:Spawn(off.unit, MaxSquadSize)
+				print("[AISPAWN] OFFICER try=" .. tostring(off.unit) .. " ok=" .. tostring(ok))
+				if not ok then Context.FailCooldown[off.unit] = Context.MatchQuants end
+				UpdateUnitToSpawn(Context.Purchase)
+			end
+		end
+	end
+
 	for squadId in pairs(Context.FieldUnits) do
 		if not BotApi.Scene:IsSquadExists(squadId) then
 			Context.FieldUnits[squadId] = nil
@@ -603,7 +650,10 @@ function OnGameQuant()
 
 	for i, squad in pairs(BotApi.Scene.Squads) do
 		if not Context.SquadTimers[squad] then
-			SetSquadOrder(CaptureFlag, squad, OrderRotationPeriod)
+			local entry = Context.FieldUnits[squad]
+			if not (entry and entry.class == UnitClass.Officer) then
+				SetSquadOrder(CaptureFlag, squad, OrderRotationPeriod) -- officers stay parked
+			end
 		end
 	end
 end
@@ -644,7 +694,12 @@ function OnGameSpawn(args)
 			Context.LastSpawn[Context.SpawnInfo.unit] = Context.MatchQuants
 		end
 	end
-	SetSquadOrder(CaptureFlag, args.squadId, OrderRotationPeriod)
+	-- Officers stay parked at the spawn to survive (they hold the unit cap); everyone
+	-- else gets a capture order.
+	local entry = Context.FieldUnits[args.squadId]
+	if not (entry and entry.class == UnitClass.Officer) then
+		SetSquadOrder(CaptureFlag, args.squadId, OrderRotationPeriod)
+	end
 end
 
 BotApi.Events:Subscribe(BotApi.Events.GameStart, OnGameStart)
