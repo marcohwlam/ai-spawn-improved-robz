@@ -46,6 +46,7 @@ local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spen
 -- Neutral-flag capper trickle: every NeutralInterval quants, if any flag is
 -- neutral, spawn one cheap line-infantry squad ordered to grab a neutral flag.
 local NeutralInterval = 5 * 70  -- ~5s between capper checks
+local CapperCap       = 2       -- max live single-soldier cappers (prevents stacking)
 
 -- When a Spawn fails (usually the picked unit is unaffordable right now), bench
 -- that unit for FailCooldownQuants so the picker falls through to a cheaper tier
@@ -292,6 +293,12 @@ function LiveAtRifleCount()
 			n = n + 1
 		end
 	end
+	return n
+end
+
+function LiveCapperCount()
+	local n = 0
+	for _ in pairs(Context.Cappers) do n = n + 1 end
 	return n
 end
 
@@ -880,7 +887,7 @@ function OnGameQuant()
 	Context.NeutralCount = Context.NeutralCount + 1
 	if Context.NeutralCount >= NeutralInterval then
 		Context.NeutralCount = 0
-		if CountNeutralFlags() > 0 then
+		if CountNeutralFlags() > 0 and LiveCapperCount() < CapperCap then
 			local line = GetLineUnit()
 			if line then
 				local ok = BotApi.Commands:Spawn(line.unit, 1) -- single soldier, not a full squad
