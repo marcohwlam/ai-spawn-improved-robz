@@ -16,6 +16,7 @@ local Context = {
 	WaveRemaining = 0, -- units left to attempt in the current wave (0 = idle)
 	WaveFails = 0,     -- consecutive failed Spawns this wave (MP-spent detector)
 	ArmorLead = 0,     -- armor units still to front-load at the current wave's start
+	SmgLead = 0,       -- extra SMG/assault squads to front-load this wave (set when losing)
 	WaveCooldown = 0,  -- quant countdown between spawns within a wave
 	NeutralCount = 0,  -- quant countdown for the neutral-capper trickle
 	BackfillCount = 0, -- quant countdown for the between-wave backfill trickle
@@ -465,6 +466,19 @@ function GetUnitToSpawn(units)
 		end
 	end
 
+	-- SMG lead: when losing, inject the faction's tagged SMG/assault squad if available.
+	if Context.SmgLead > 0 then
+		local smg = nil
+		for i, t in pairs(pool) do
+			if t.smg then smg = t break end
+		end
+		if smg then
+			return smg
+		else
+			Context.SmgLead = 0 -- none available; resume normal selection
+		end
+	end
+
 	-- If aux is owed for this cycle, inject one now (skips the four-tier deficit pick).
 	if Context.AuxOwed > 0 then
 		local aux = collectAux()
@@ -492,6 +506,7 @@ function OnGameStart()
 	Context.WaveRemaining = 0
 	Context.WaveFails = 0
 	Context.ArmorLead = 0
+	Context.SmgLead = 0
 	Context.WaveCooldown = 0
 	Context.NeutralCount = 0
 	Context.BackfillCount = 0
@@ -545,6 +560,9 @@ function AttemptSpawn(tag)
 			if Context.ArmorLead > 0 and (utier == "heavy" or utier == "medium") then
 				Context.ArmorLead = Context.ArmorLead - 1
 			end
+			if Context.SmgLead > 0 and unit.smg then
+				Context.SmgLead = Context.SmgLead - 1
+			end
 			Context.RatioCount = Context.RatioCount + 1
 			local phase = CurrentPhase(Context.MatchQuants / QuantsPerSec)
 			if Context.RatioCount >= CycleSize(phase) then
@@ -572,6 +590,8 @@ function OnGameQuant()
 		Context.WaveCooldown = 0
 		-- Front-load the phase's armor quota (heaviest first) before the ratio picker.
 		Context.ArmorLead = (phase.targets.heavy or 0) + (phase.targets.medium or 0)
+		-- When losing, also front-load one extra SMG/assault squad.
+		Context.SmgLead = (FlagDeficit() > 0) and 1 or 0
 		print("[AISPAWN] WAVE mq=" .. tostring(Context.MatchQuants)
 			.. " t=" .. tostring(math.floor(Context.MatchQuants / QuantsPerSec))
 			.. " phase=" .. phase.name .. " budget=" .. tostring(budget)

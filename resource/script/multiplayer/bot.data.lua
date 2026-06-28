@@ -42,7 +42,7 @@ Purchases = {
 		Units = {
 			["eng"] = {
 				{priority=2.0, class=UnitClass.Infantry,   unit="riflemans(eng)", recharge=0, line=true,},
-				{priority=2.0, class=UnitClass.Infantry,   unit="smgs(eng)", recharge=0, line=true,},
+				{priority=2.0, class=UnitClass.Infantry,   unit="smgs(eng)", recharge=0, line=true, smg=true,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="riflemans_at(eng)", recharge=0, line=true,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="riflemans_scot(eng)", recharge=0, line=true,},
 				{priority=1.0, class=UnitClass.Infantry,   unit="pioneers(eng)", recharge=0,},
@@ -90,7 +90,7 @@ Purchases = {
 				{priority=0.8, class=UnitClass.Sniper,     unit="snipers(ger)", recharge=0,},
 				{priority=0.3, class=UnitClass.Officer,    unit="officers(ger)", recharge=0,},
 				{priority=2.5, class=UnitClass.Infantry,   unit="elites_44(ger)", recharge=0,},
-				{priority=2.0, class=UnitClass.Infantry,   unit="stormtroopers_44(ger)", recharge=0,},
+				{priority=2.0, class=UnitClass.Infantry,   unit="stormtroopers_44(ger)", recharge=0, smg=true,},
 				{priority=2.0, class=UnitClass.Infantry,   unit="sturmgrens_44(ger)", recharge=0, phase="mid",},
 				{priority=1.5, class=UnitClass.Infantry,   unit="sturmgrens_44_mech(ger)", recharge=0, mech=true, phase="late",},
 				{priority=2.0, class=UnitClass.Infantry,   unit="volksgrens_heavy(ger)", recharge=0, line=true, phase="early",},
@@ -131,7 +131,7 @@ Purchases = {
 			},
 			["ger_ss"] = {
 				{priority=2.0, class=UnitClass.Infantry,   unit="grenadiers_44(ger_ss)", recharge=0, line=true,},
-				{priority=2.0, class=UnitClass.Infantry,   unit="sturmgrens(ger_ss)", recharge=0,},
+				{priority=2.0, class=UnitClass.Infantry,   unit="sturmgrens(ger_ss)", recharge=0, smg=true,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="pzgrens_44(ger_ss)", recharge=0,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="gebirgs_44(ger_ss)", recharge=0,},
 				{priority=1.0, class=UnitClass.Infantry,   unit="kosaken_44(ger_ss)", recharge=0, line=true,},
@@ -175,7 +175,7 @@ Purchases = {
 			},
 			["usa"] = {
 				{priority=2.0, class=UnitClass.Infantry,   unit="riflemans(usa)", recharge=0, line=true,},
-				{priority=2.0, class=UnitClass.Infantry,   unit="smgs(usa)", recharge=0, line=true,},
+				{priority=2.0, class=UnitClass.Infantry,   unit="smgs(usa)", recharge=0, line=true, smg=true,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="riflemans_bar(usa)", recharge=0, line=true,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="riflemans_assault(usa)", recharge=0, line=true,},
 				{priority=1.0, class=UnitClass.Infantry,   unit="engineers(usa)", recharge=0,},
@@ -217,7 +217,7 @@ Purchases = {
 			},
 			["rus"] = {
 				{priority=2.0, class=UnitClass.Infantry,   unit="riflemans(rus)", recharge=0, line=true,},
-				{priority=2.0, class=UnitClass.Infantry,   unit="smgs(rus)", recharge=0, line=true,},
+				{priority=2.0, class=UnitClass.Infantry,   unit="smgs(rus)", recharge=0, line=true, smg=true,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="smgsv2(rus)", recharge=0, line=true,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="shock_assault(rus)", recharge=0,},
 				{priority=1.0, class=UnitClass.Infantry,   unit="sapper_squad(rus)", recharge=0,},
@@ -257,7 +257,7 @@ Purchases = {
 			["jap"] = {
 				{priority=2.0, class=UnitClass.Infantry,   unit="riflemans(jap)", recharge=0, line=true,},
 				{priority=2.0, class=UnitClass.Infantry,   unit="riflemans_t96(jap)", recharge=0, line=true,},
-				{priority=1.5, class=UnitClass.Infantry,   unit="smgs(jap)", recharge=0, line=true,},
+				{priority=1.5, class=UnitClass.Infantry,   unit="smgs(jap)", recharge=0, line=true, smg=true,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="home_guards(jap)", recharge=0, line=true,},
 				{priority=1.0, class=UnitClass.ATInfantry, unit="at_rifles(jap)", recharge=0,},
 				{priority=1.0, class=UnitClass.ATInfantry, unit="bazookers(jap)", recharge=0,},
@@ -295,7 +295,7 @@ Purchases = {
 			},
 			["ger2"] = {
 				{priority=2.0, class=UnitClass.Infantry,   unit="riflemans(ger2)", recharge=0, line=true,},
-				{priority=2.0, class=UnitClass.Infantry,   unit="smgs(ger2)", recharge=0, line=true,},
+				{priority=2.0, class=UnitClass.Infantry,   unit="smgs(ger2)", recharge=0, line=true, smg=true,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="home_guards(ger2)", recharge=0, line=true,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="home_guards2(ger2)", recharge=0, line=true,},
 				{priority=1.0, class=UnitClass.ATInfantry, unit="at_rifles(ger2)", recharge=0,},
@@ -330,7 +330,7 @@ Purchases = {
 			},
 			["rus_guard"] = {
 				{priority=2.0, class=UnitClass.Infantry,   unit="specialinf(rus_guard)", recharge=0, line=true,},
-				{priority=2.0, class=UnitClass.Infantry,   unit="specialinf_smg(rus_guard)", recharge=0, line=true,},
+				{priority=2.0, class=UnitClass.Infantry,   unit="specialinf_smg(rus_guard)", recharge=0, line=true, smg=true,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="guards_shock(rus_guard)", recharge=0,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="sapper_squad(rus_guard)", recharge=0,},
 				{priority=1.0, class=UnitClass.ATInfantry, unit="at_rifles(rus_guard)", recharge=0,},
