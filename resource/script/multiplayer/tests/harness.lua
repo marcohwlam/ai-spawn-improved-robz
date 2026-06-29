@@ -7,6 +7,9 @@ require = function(mod)
 	if tostring(mod):find("bot%.data") then
 		return dofile(MROOT .. "/bot.data.lua")
 	end
+	if tostring(mod):find("flag_sectors") then
+		return dofile(MROOT .. "/flag_sectors.lua")
+	end
 	return realRequire(mod)
 end
 

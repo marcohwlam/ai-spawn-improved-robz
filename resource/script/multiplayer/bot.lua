@@ -1,6 +1,7 @@
 require([[/script/multiplayer/bot.data]])
+require([[/script/multiplayer/flag_sectors]])
 
-local Context = {
+Context = {
 	Purchase = nil,
 	SpawnInfo = nil,
 	SquadTimers = {},
@@ -86,6 +87,10 @@ local MaxGroups = 1   -- live groups at a time (1 = single concentrated push; ra
 -- 2v2 (<=4 bots): ~96 weighted / ~130-160 real squads, under the ~200-squad level that OOM'd
 -- the 32-bit engine. Lower this if playing larger team games. Tune per typical match size.
 local MaxLiveSquads = 24
+
+-- Flag-sector thresholds on the team-oriented axis (0 = own home, 1 = enemy home).
+local SectorOwnMax   = 0.4  -- myAxis below this => OWN
+local SectorEnemyMin = 0.6  -- myAxis above this => ENEMY; between the two => CONTESTED
 
 -- Composition is driven by a core infantry : tank ratio. Auxiliary units do not
 -- count toward the ratio; they are injected up to a cap and filtered by trigger.
@@ -679,6 +684,63 @@ end
 
 function UpdateUnitToSpawn(purchase)
 	Context.SpawnInfo = GetNextUnitToSpawn(purchase)
+end
+
+-- The sorted, comma-joined set of current flag names. The engine exposes no map id, so
+-- this set is the map fingerprint used to look a precomputed sector table up.
+function FlagFingerprint()
+	local names = {}
+	for _, flag in pairs(BotApi.Scene.Flags) do
+		names[#names + 1] = flag.name
+	end
+	table.sort(names)
+	return table.concat(names, ",")
+end
+
+-- Label every live flag OWN / CONTESTED / ENEMY plus a rank toward the enemy home,
+-- from the precomputed Sectors table, oriented by this bot's team. Unknown maps fall
+-- back to all-CONTESTED. Writes Context.FlagLabel and Context.FlagBases. Never errors.
+function LabelFlags()
+	Context.FlagLabel = {}
+	Context.FlagBases = nil
+	local fp = FlagFingerprint()
+	local entry = Sectors and Sectors[fp]
+	local team = BotApi.Instance.team
+	local pid = BotApi.Instance.playerId
+	if not entry then
+		for _, flag in pairs(BotApi.Scene.Flags) do
+			Context.FlagLabel[flag.name] = { sector = "CONTESTED" }
+		end
+		print("[AISPAWN] SECTOR_FALLBACK fingerprint=" .. fp)
+		return
+	end
+	Context.FlagBases = entry.bases
+	-- Collect present flags with a team-oriented axis (team b sees the axis reversed).
+	local present = {}
+	for _, flag in pairs(BotApi.Scene.Flags) do
+		local d = entry.flags[flag.name]
+		if d then
+			local myAxis = (team == "b") and (1 - d.axis) or d.axis
+			present[#present + 1] = { name = flag.name, myAxis = myAxis, x = d.x, y = d.y }
+		else
+			Context.FlagLabel[flag.name] = { sector = "CONTESTED" } -- present but unmapped
+		end
+	end
+	-- Rank by myAxis descending; rank 1 = closest to enemy home. Tie-break by name so the
+	-- two teammates compute an identical ranking regardless of pairs() iteration order.
+	table.sort(present, function(p, q)
+		if p.myAxis ~= q.myAxis then return p.myAxis > q.myAxis end
+		return p.name < q.name
+	end)
+	for rank, p in ipairs(present) do
+		local sector = "CONTESTED"
+		if p.myAxis < SectorOwnMax then sector = "OWN"
+		elseif p.myAxis >= SectorEnemyMin then sector = "ENEMY" end
+		Context.FlagLabel[p.name] = { sector = sector, rank = rank, axis = p.myAxis, x = p.x, y = p.y }
+		print("[AISPAWN] SECTOR pid=" .. tostring(pid) .. " team=" .. tostring(team)
+			.. " " .. p.name .. " sector=" .. sector .. " rank=" .. rank
+			.. " axis=" .. string.format("%.2f", p.myAxis))
+	end
 end
 
 function OnGameStart()
