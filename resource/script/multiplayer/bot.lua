@@ -844,6 +844,37 @@ function MapProbe()
 		local ok, v = pcall(function() return _G[g] end)
 		print("[AISPAWN] MAPPROBE global." .. g .. "=" .. tostring(ok and v))
 	end
+	-- File/OS capability: os.time is already used, so the sandbox is not fully locked. If io
+	-- read works on an engine-written file (game.log names the loaded map), map identity
+	-- becomes reachable -- which would resolve the flag-name collision across 20 maps.
+	keys("os", os)
+	keys("io", io)
+	print("[AISPAWN] MAPPROBE has_loadfile=" .. tostring(_G.loadfile ~= nil)
+		.. " has_dofile=" .. tostring(_G.dofile ~= nil)
+		.. " has_io=" .. tostring(io ~= nil) .. " has_os=" .. tostring(os ~= nil))
+	local function tryRead(path)
+		local ok, res = pcall(function()
+			local f = io.open(path, "r")
+			if not f then return "nil" end
+			local line = f:read("*l")
+			f:close()
+			return "OPENED first_line=[" .. tostring(line) .. "]"
+		end)
+		print("[AISPAWN] MAPPROBE read[" .. path .. "]=" .. tostring((ok and res) or "<err>"))
+	end
+	if io and io.open then
+		tryRead("game.log")
+		tryRead("log/game.log")
+		tryRead("mission.mi")
+		local okw = pcall(function()
+			local f = io.open("aispawn_probe.txt", "w"); f:write("aispawn"); f:close()
+		end)
+		print("[AISPAWN] MAPPROBE write_test=" .. tostring(okw))
+	end
+	if os and os.getenv then
+		print("[AISPAWN] MAPPROBE env_PWD=" .. tostring(os.getenv("PWD"))
+			.. " env_CD=" .. tostring(os.getenv("CD")))
+	end
 	-- One flag object: list its fields, then probe speculative coordinate/id accessors.
 	local f1
 	for _, fl in pairs(BotApi.Scene.Flags) do f1 = fl; break end
