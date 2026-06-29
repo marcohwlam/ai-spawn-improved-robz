@@ -8,7 +8,7 @@ import re, zipfile, argparse
 ROBZ_PAK = ("/mnt/storage/steam/steamapps/common/Men of War Assault Squad 2/"
             "mods/robz realism mod 1.30.10/resource/gamelogic.pak")
 
-_UNIT_ID = re.compile(r'^\s*\{"([A-Za-z0-9_]+)"')
+_UNIT_ID = re.compile(r'^\s*\{"([^"]+)"')
 _UNLOCK = re.compile(r';\s*(\d+)\s*sec')
 _TTAG = re.compile(r'\bt\(([^)]*)\)')
 _WEIGHTS = ("sheavy", "heavy", "medium", "light")  # sheavy before heavy (substring)
@@ -44,7 +44,7 @@ def scrape_pak(pak_path):
                     meta.setdefault(uid, val)  # keep first
     return meta
 
-_BD_ID = re.compile(r'unit="([A-Za-z0-9_]+)"')
+_BD_ID = re.compile(r'unit="([^"]+)"')
 _RECHARGE = re.compile(r'\s*recharge=(\d+),')
 _UNLOCK_FIELD = re.compile(r'\s*unlock=\d+,')
 _WEIGHT_FIELD = re.compile(r'\s*weight="[^"]*",')
@@ -83,20 +83,22 @@ def inject(bot_data_text, meta):
             out_lines.append(line)
             continue
         uid = mid.group(1)
+        # Units absent from RobZ (bot-group squad names like "riflemans(eng)") carry no
+        # unlock/weight, but their recharge field is still dead and gets stripped. A
+        # non-zero recharge we cannot validate against RobZ is flagged, not silently lost.
+        info = meta.get(uid, {"unlock": None, "weight": None})
         if uid not in meta:
             report["no_match"].append(uid)
-            out_lines.append(line)
-            continue
         body = line.rstrip("\n")
         nl = "\n" if line.endswith("\n") else ""
-        new_body, action = _inject_line(body, meta[uid])
+        new_body, action = _inject_line(body, info)
         if action == "mismatch":
             mr = _RECHARGE.search(body)
-            report["mismatch"].append((uid, int(mr.group(1)), meta[uid].get("unlock")))
+            report["mismatch"].append((uid, int(mr.group(1)), info.get("unlock")))
             out_lines.append(line)
             continue
         report["injected"].append(uid)
-        if "class=UnitClass.Tank," in body and meta[uid].get("weight") is None:
+        if "class=UnitClass.Tank," in body and info.get("weight") is None:
             report["tanks_no_weight"].append(uid)
         out_lines.append(new_body + nl)
     return "".join(out_lines), report

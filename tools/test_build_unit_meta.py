@@ -50,4 +50,34 @@ assert "recharge=" not in out, out
 assert "unlock=" not in out, out
 print("inject zero OK")
 
+# --- widened id regex: hyphen ids (Japanese armor) and paren ids (infantry groups) ---
+HYPHEN = '{"chi-ha57" ("v" c(10) t(44 medium) s(jap) cp(20)) {level 1} {cost 400}} ;480sec'
+mh = m.parse_units(HYPHEN)
+assert mh["chi-ha57"] == {"unlock": 480, "weight": "medium"}, mh
+# hyphen-id Tank line migrates: recharge stripped, unlock + weight added
+LINE_JP = '\t\t\t\t{priority=1.5, class=UnitClass.Tank,       unit="chi-ha57", recharge=480,            min_income=1.0,},'
+out, rep = m.inject(LINE_JP, {"chi-ha57": {"unlock": 480, "weight": "medium"}})
+assert "recharge=" not in out, out
+assert "unlock=480" in out, out
+assert 'weight="medium"' in out, out
+print("inject hyphen OK")
+
+# --- no RobZ match (bot-group name): strip the dead recharge=0, add nothing, record no_match ---
+LINE_GROUP = '\t\t\t\t{priority=2.0, class=UnitClass.Infantry,   unit="riflemans(eng)", recharge=0, inf="rifle",},'
+out, rep = m.inject(LINE_GROUP, {})  # empty meta -> not found
+assert "recharge=" not in out, out
+assert "unlock=" not in out, out
+assert "riflemans(eng)" in rep["no_match"], rep
+# idempotent on a no-match line
+out2, _ = m.inject(out, {})
+assert out2 == out, (out, out2)
+print("inject no_match strip OK")
+
+# --- no RobZ match with NON-ZERO recharge: cannot validate -> flagged, left untouched ---
+LINE_GROUP_NZ = '\t\t\t\t{class=UnitClass.Tank, unit="mystery(jap)", recharge=300, min_income=1.0,},'
+out, rep = m.inject(LINE_GROUP_NZ, {})
+assert out == LINE_GROUP_NZ, out
+assert ("mystery(jap)", 300, None) in rep["mismatch"], rep["mismatch"]
+print("inject no_match nonzero flagged OK")
+
 print("build_unit_meta test OK")
