@@ -770,14 +770,14 @@ function LabelFlags()
 	Context.FlagLabel = {}
 	Context.FlagBases = nil
 	local fp = FlagFingerprint()
-	local entry = Sectors and Sectors[fp]
+	local entry = Sectors and Context.MapName and Sectors[Context.MapName]
 	local team = BotApi.Instance.team
 	local pid = BotApi.Instance.playerId
 	if not entry then
 		for _, flag in pairs(BotApi.Scene.Flags) do
 			Context.FlagLabel[flag.name] = { sector = "CONTESTED" }
 		end
-		print("[AISPAWN] SECTOR_FALLBACK fingerprint=" .. fp)
+		print("[AISPAWN] SECTOR_FALLBACK map=" .. tostring(Context.MapName) .. " fp=" .. fp)
 		return
 	end
 	Context.FlagBases = entry.bases
@@ -1011,6 +1011,7 @@ function OnGameStart()
 		.. " flags=" .. tostring(nflags)
 		.. " squads=" .. tostring(nsquads))
 	MapProbe()
+	Context.MapName = ReadMapName()
 	LabelFlags()
 	PartitionFlags()
 	math.randomseed(os.time() * BotApi.Instance.hostId)

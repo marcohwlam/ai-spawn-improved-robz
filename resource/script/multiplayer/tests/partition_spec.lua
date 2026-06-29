@@ -15,6 +15,7 @@ end
 -- Phase 1 populates FlagLabel{x,y} + FlagBases for bastogne; reuse it as the input.
 BotApi.Scene.Flags = bastogneFlags()
 BotApi.Instance.team = "a"; BotApi.Instance.teamSize = 2
+Context.MapName = "2v2_bastogne"
 
 -- bot idx 1 (playerId 1) and idx 2 (playerId 2) of team a.
 BotApi.Instance.playerId = 1; LabelFlags(); PartitionFlags()

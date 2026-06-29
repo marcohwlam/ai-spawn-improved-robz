@@ -70,7 +70,7 @@ def main():
         for m in a.maps:
             text = z.read("map/multi/%s/battle_zones.mi" % m).decode("latin-1")
             bases, flags = parse_mi(text)
-            entries.append((fingerprint(flags), bases, compute(bases, flags)))
+            entries.append((m, bases, compute(bases, flags)))
     with open(a.out, "w") as f:
         f.write(emit_lua(entries))
     print("wrote", a.out, "entries:", len(entries))

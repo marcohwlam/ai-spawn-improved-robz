@@ -17,6 +17,7 @@ BotApi.Scene.Flags = bastogneFlags()
 eq(FlagFingerprint(), "f1,f10,f2,f20,f3,f4,f5,f6,f7,f8,f9", "fingerprint")
 
 -- team a: f10 is closest to enemy home (rank 1, ENEMY); f5 is closest to own (rank 11, OWN)
+Context.MapName = "2v2_bastogne"
 BotApi.Instance.team = "a"; BotApi.Instance.playerId = 1
 LabelFlags()
 eq(Context.FlagLabel["f10"].sector, "ENEMY", "a f10 sector")
@@ -37,6 +38,7 @@ print("sector team-b OK")
 -- unknown map -> fallback C: all CONTESTED, no rank, no bases
 BotApi.Scene.Flags = { { name = "zz1", occupant = 0 }, { name = "zz2", occupant = 0 } }
 BotApi.Instance.team = "a"
+Context.MapName = "zz_unknown_map"
 LabelFlags()
 eq(Context.FlagLabel["zz1"].sector, "CONTESTED", "miss zz1 sector")
 eq(Context.FlagLabel["zz1"].rank, nil, "miss zz1 rank nil")
