@@ -10,8 +10,10 @@ Give each AI bot a per-flag label at match start — OWN / CONTESTED / ENEMY, pl
 distance rank toward the enemy home — so later AI logic can answer: which flag is my
 closest one to defend, which are contested, and which is closest to the enemy home.
 
-This spec produces the labels only. It does not change targeting, capper, or defender
-behavior. Consumption by AI logic is deliberately out of scope (see Out of Scope).
+The work is phased. Phase 1 produces the labels only and changes no unit behavior.
+Phase 2 (designed here but built only after an in-game gate) consumes the labels to split
+flags laterally between the two teammate bots so they stop contesting the same point.
+Actually routing units from the partition is a following step, out of scope here.
 
 ## Hard Engine Constraints (verified, 2026-06-28)
 
@@ -158,6 +160,11 @@ they can be tuned without rebuilding the table.
 - Output: `Context.FlagLabel[name] = { sector = "OWN"|"CONTESTED"|"ENEMY",
   rank = <int or nil>, axis = <number or nil>, x = <number or nil>, y = <number or nil> }`,
   plus `Context.FlagBases = entry.bases` (or nil on a miss).
+- **Debug log (required for the Phase 1 -> 2 gate):** after labeling, print one line per
+  flag, e.g. `SECTOR pid=<playerId> team=<a|b> <name> sector=<S> rank=<R> axis=<A>`, and
+  on a miss the single `SECTOR_FALLBACK fingerprint=<...>`. These lines let the in-game
+  test confirm correctness, determinism across teammates, and the playerId-by-team
+  assumption without any other instrumentation.
 
 ## Fingerprint and Collision
 
@@ -205,20 +212,96 @@ split (2 OWN, 1 ENEMY, 8 CONTESTED). The rank is the more useful signal and is
 threshold-free. Thresholds are tunable constants; an alternative tertile split (divide
 ranked flags into thirds) is noted as a future option, not adopted in v1.
 
-## Scope
+## Scope and Phasing
 
-**In scope (v1):**
+This feature ships in two phases with an in-game verification gate between them. Phase 2
+is NOT built until Phase 1 has been confirmed in a real match (see the gate below).
+
+**Phase 1 — Labeling (this spec, build now):**
 - `tools/build_sectors.py` producing `flag_sectors.lua` for bastogne.
-- `flag_sectors.lua` data file with the bastogne entry.
-- `LabelFlags()` + `Context.FlagLabel` populated at `OnGameStart`.
+- `flag_sectors.lua` data file with the bastogne entry (bases + flags x,y,axis).
+- `LabelFlags()` + `Context.FlagLabel` / `Context.FlagBases` populated at `OnGameStart`.
+- A debug log line per labeled flag (see gate) so the in-game test can confirm.
 - Fallback C for any unrecognized map.
 - Tests (below).
 
+**Phase 1 -> 2 Verification Gate (in-game test, must pass before Phase 2):**
+Run a self-hosted bastogne 2v2 with AI on both teams, then confirm from game.log:
+1. `LabelFlags()` fired and the bastogne fingerprint matched (no `SECTOR_FALLBACK`).
+2. Labels are sane: f10 ENEMY/rank 1 and f5 OWN/rank 11 for a team-a bot; inverted for
+   a team-b bot.
+3. **playerId is contiguous-by-team** (the load-bearing assumption for Phase 2): the two
+   team-a bots report adjacent ids and the two team-b bots the next block (e.g. a=1,2 /
+   b=3,4). Confirm across at least 2 matches, since only one sample exists today.
+4. Both teammates compute identical raw labels for the same flag (determinism).
+If 1, 2, 4 hold but 3 is violated, Phase 2 still proceeds but must use the collision-safe
+fallback (below) instead of trusting `idx`.
+
+**Phase 2 — Lateral Teammate Partition (gated, design below):**
+- Consume the Phase 1 labels + stored coords to split flags laterally between the two
+  teammate bots so they do not contest the same point.
+
 **Out of scope (later specs):**
-- Consuming `Context.FlagLabel` in PickGroupTarget / capper / defender logic.
+- Wiring the partition into PickGroupTarget / capper / defender order issuing (Phase 2
+  produces the assignment; using it to actually route units is a following step).
 - Extracting the other 44 RobZ maps (batch run of the same pipeline once v1 is proven).
-- Per-player (a1 vs a2) sectoring — not achievable with the current API.
+- Per-player (a1 vs a2) spawn-aligned sectoring — not achievable with the current API
+  (a bot cannot learn which physical base it spawned at).
 - Fingerprint collision disambiguation (not reachable with one map).
+
+## Phase 2 Design — Lateral Teammate Partition
+
+`axis` (Phase 1) is the FORWARD depth (own -> enemy). Splitting the two teammates is an
+ORTHOGONAL, lateral dimension. Phase 2 derives a lateral coordinate from the stored
+coords and assigns each flag to a teammate slot.
+
+```
+                       enemy home (B)
+                            ^
+          OWN | CONTESTED | ENEMY     <- axis  (Phase 1: attack priority)
+   bot idx1 <------+-------> bot idx2  <- lateral (Phase 2: who owns it)
+                            v
+                       own home (A)
+```
+
+**Algorithm (runs at OnGameStart, after LabelFlags):**
+
+1. **Lateral coordinate.** From `Context.FlagBases`, compute the A-home centroid and
+   B-home centroid; the A->B vector is the forward axis. Project each flag's `(x,y)` onto
+   the axis PERPENDICULAR to A->B -> `lat` (signed lateral position). Projection (not raw
+   y) keeps this correct on maps whose bases differ on y.
+2. **Team index.** `team=="a"` -> `idx = playerId`; `team=="b"` -> `idx = playerId -
+   teamSize`. Range `1..teamSize` (2 in 2v2). This is the assumption the gate verifies.
+3. **Bands.** Sort flags by `lat`. Divide into `teamSize` outer bands plus a central
+   SHARED band. `idx==1` claims the low-`lat` band, `idx==2` the high-`lat` band; the
+   central band is claimed by both.
+4. **Ownership.** Each bot acts only on flags in (its own band + the shared band).
+   Because every bot runs identical code over identical data with an identical sort, the
+   two bots compute the SAME partition with no communication -> they never target the
+   same exclusive flag. De-confliction is structural, not negotiated.
+
+**Worked example — bastogne, flags sorted by lateral (here y, since A->B is the x-axis):**
+
+```
+ y: -2952 -1945 -1852 -1284  -98   970  1705 1707 2445 3674 5042
+    f2    f4    f6    f7    f1   f8   f10  f5   f9   f3   f20
+   |----- idx1  (low y) -----|  |- shared -|  |----- idx2 (high y) -----|
+        f2 f4 f6 f7             f1 f8 f10           f5 f9 f3 f20
+```
+
+idx1 owns the left flank (f2,f4,f6,f7), idx2 the right (f5,f9,f3,f20), f1/f8/f10 shared.
+
+**Collision-safe fallback (used if the gate finds playerId not contiguous-by-team):**
+if `idx` cannot be trusted, do not partition; every bot treats all flags as its own
+(current behavior). This degrades to today's possible overlap, never worse.
+
+**Band sizing:** shared band width is a tunable constant (default: central third of the
+ranked flags is shared, outer thirds split). Wider shared band = more overlap but more
+coverage; narrower = cleaner split but risk of an uncovered seam.
+
+**Phase 2 tests:** with mocked coords + team/playerId, assert idx1 and idx2 receive
+disjoint outer bands, the shared band appears in both, and the two teammates' assignments
+union to the full flag set with overlap only in the shared band.
 
 ## Error Handling
 
