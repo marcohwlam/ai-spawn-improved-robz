@@ -28,7 +28,6 @@ Context = {
 	FillGroup = nil,    -- index of the group currently being filled (set per spawn)
 	AuxOwed = 0,       -- aux units still to inject in the current batch
 	MatchQuants = 0,   -- quant ticks since match start (elapsed-time estimate)
-	LastSpawn = {},    -- unit.unit -> MatchQuants tick of last spawn (recharge tracking)
 	FailCooldown = {}, -- unit.unit -> MatchQuants tick of last FAILED spawn (skip a while)
 	PrevOwned = {},    -- flag name -> true if we owned it last tick
 	LostStamp = {},    -- flag name -> MatchQuants when we lost it (recapture priority)
@@ -325,7 +324,7 @@ function TierOf(t)
 	elseif t.class == UnitClass.HeavyTank then
 		return "heavy"
 	elseif t.class == UnitClass.Tank then
-		if (t.recharge or 0) >= TierMediumRecharge then return "medium" else return "light" end
+		return (t.weight == "medium") and "medium" or "light"
 	elseif t.class == UnitClass.Vehicle then
 		return "light"
 	else
@@ -602,14 +601,12 @@ function GetUnitToSpawn(units)
 	-- Resolve fill group for per-group field counts and elite cap.
 	local g = Context.FillGroup and Context.Groups[Context.FillGroup]
 
-	-- Build the eligible pool: affordable, off-cooldown, and within the phase armor cap.
+	-- Build the eligible pool: affordable, unlocked, and within the phase armor cap.
 	local pool = {}
 	for i, unit in pairs(units) do
 		local affordable = teamSize >= (unit.min_team or 0)
 			and income >= (unit.min_income or -1)
-		local last = Context.LastSpawn[unit.unit]
-		local cooled = (last == nil)
-			or (Context.MatchQuants - last >= (unit.recharge or 0) * QuantsPerSec)
+		local unlockOk = (unit.unlock == nil) or (elapsed >= unit.unlock)
 		local failed = Context.FailCooldown[unit.unit]
 		local notRecentlyFailed = (failed == nil)
 			or (Context.MatchQuants - failed >= FailCooldownQuants)
@@ -621,7 +618,7 @@ function GetUnitToSpawn(units)
 		local elitePhaseOk = (not unit.elite) or (phase.name == "early")
 		local eliteCapOk = not (g and unit.elite and GroupEliteCount(g) >= 1)
 		local eliteOk = elitePhaseOk and eliteCapOk
-		if affordable and cooled and notRecentlyFailed and capOk and phaseOk and eliteOk then
+		if affordable and unlockOk and notRecentlyFailed and capOk and phaseOk and eliteOk then
 			table.insert(pool, unit)
 		end
 	end
@@ -1055,7 +1052,6 @@ function OnGameStart()
 	Context.AuxOwed = 0
 	Context.Cappers = {}
 	Context.SpawnQueue = {}
-	Context.LastSpawn = {}
 	Context.FailCooldown = {}
 	Context.PrevOwned = {}
 	Context.LostStamp = {}
@@ -1455,7 +1451,6 @@ function OnGameSpawn(args)
 	Context.SpawnFlags.isRare = false
 	if info then
 		Context.FieldUnits[args.squadId] = info
-		Context.LastSpawn[info.unit] = Context.MatchQuants
 	end
 	if d and d.kind == "capper" then
 		Context.Cappers[args.squadId] = true

@@ -35,9 +35,6 @@ Phases = {
 -- Tier rank for the armorCap gate (higher = heavier). Aux units are not gated here.
 TierRank = { rifle = 0, smg = 0, light = 1, medium = 2, heavy = 3 }
 
--- Recharge seconds at/above which a class=Tank unit counts as medium (else light).
-TierMediumRecharge = 550
-
 Purchases = {
 
 	{--single full roster, infinite (category-driven selection)
