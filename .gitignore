@@ -10,3 +10,6 @@
 
 # compiled Lua (we only ship source)
 *.luac
+
+# Python build-script bytecode cache
+tools/__pycache__/
