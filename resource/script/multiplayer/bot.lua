@@ -402,7 +402,8 @@ function UpdateGroupTargets()
 			local newT = PickGroupTarget(other)
 			if newT and newT ~= g1.target then
 				print("[AISPAWN] GROUP_TARGET id=1 target=" .. tostring(newT)
-					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority") .. PidTag())
+					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority")
+					.. " tier=" .. tostring(Context.LastPickTier) .. PidTag())
 			end
 			g1.target = newT
 		end
@@ -413,7 +414,8 @@ function UpdateGroupTargets()
 			local newT = PickGroupTarget(other)
 			if newT and newT ~= g2.target then
 				print("[AISPAWN] GROUP_TARGET id=2 target=" .. tostring(newT)
-					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority") .. PidTag())
+					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority")
+					.. " tier=" .. tostring(Context.LastPickTier) .. PidTag())
 			end
 			g2.target = newT
 		end
@@ -1341,22 +1343,68 @@ function FlagAttackable(name)
 	return false
 end
 
--- The group's attack flag: an ENEMY-held flag (never neutral), most-recently-lost first,
--- excluding excludeName (the other group's target). Returns a flag name, or nil.
-function PickGroupTarget(excludeName)
-	local best, bestStamp, bestK = nil, -1, -1
-	for i, flag in pairs(BotApi.Scene.Flags) do
-		if flag.occupant == BotApi.Instance.enemyTeam and flag.name ~= excludeName then
-			local stamp = Context.LostStamp[flag.name]
-			if stamp ~= nil then
-				if stamp > bestStamp then best, bestStamp = flag.name, stamp end
-			elseif bestStamp < 0 then
-				local k = GetFlagPriority(flag)
-				if k > bestK then best, bestK = flag.name, k end
+-- Squared distance from a flag's coords to the nearest flag our team currently owns.
+-- nil when the flag has no coords or we own no coord-bearing flag (triggers legacy ordering).
+function NearestOwnedDist(label)
+	if not (label and label.x) then return nil end
+	local team = BotApi.Instance.team
+	local best
+	for _, flag in pairs(BotApi.Scene.Flags) do
+		if flag.occupant == team then
+			local o = Context.FlagLabel[flag.name]
+			if o and o.x then
+				local dx, dy = label.x - o.x, label.y - o.y
+				local d = dx * dx + dy * dy
+				if not best or d < best then best = d end
 			end
 		end
 	end
 	return best
+end
+
+-- The group's attack flag, by a defensive-first tier ladder over candidates
+-- (enemy-held flags + neutral flags we recently lost), excluding excludeName.
+-- Tier 1: enemy holds/attacks an OWN-sector flag (home invaded; any lane).
+-- Tier 2: a mine + frontier + CONTESTED flag the enemy holds/attacks (our lane's front).
+-- Tier 3: everything else -> closest next flag (expand). Tier 3 is the catch-all, so this
+-- returns nil only when no candidate exists. Sets Context.LastPickTier for logging.
+function PickGroupTarget(excludeName)
+	local team = BotApi.Instance.team
+	local enemy = BotApi.Instance.enemyTeam
+	local best
+	for _, flag in pairs(BotApi.Scene.Flags) do
+		local name = flag.name
+		if name ~= excludeName then
+			local held = flag.occupant == enemy
+			local attacking = flag.occupant ~= team and flag.occupant ~= enemy
+				and Context.LostStamp[name] ~= nil
+			if held or attacking then
+				local label = Context.FlagLabel[name] or {}
+				local owner = Context.FlagOwner[name]
+				local tier, key
+				if label.sector == "OWN" then
+					tier, key = 1, label.axis or 1
+				elseif owner and owner.mine and label.sector == "CONTESTED" and IsFrontier(name) then
+					tier, key = 2, label.axis or 1
+				else
+					local d = NearestOwnedDist(label)
+					if d then
+						tier, key = 3, d
+					else
+						local stamp = Context.LostStamp[name]
+						tier, key = 3, (stamp and -stamp or (1e9 - GetFlagPriority(flag)))
+					end
+				end
+				if not best or tier < best.tier
+				   or (tier == best.tier and key < best.key)
+				   or (tier == best.tier and key == best.key and name < best.name) then
+					best = { name = name, tier = tier, key = key }
+				end
+			end
+		end
+	end
+	Context.LastPickTier = best and best.tier
+	return best and best.name
 end
 
 function CaptureFlag(squad)
