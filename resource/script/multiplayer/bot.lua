@@ -718,6 +718,51 @@ function ParseMapName(text)
 	return found
 end
 
+local TAIL_BYTES = 65536
+local MAP_TAIL_WIN = [[\Documents\my games\men of war - assault squad 2\log\game.log]]
+local MAP_TAIL_NIX = [[/Documents/my games/men of war - assault squad 2/log/game.log]]
+
+-- Read the last 64KB of a file (the current match's Starting line sits near the end).
+-- If that tail has no Starting line and the file is bigger than the tail, re-read in full.
+-- Returns the text, or nil on any failure. pcall-wrapped.
+function TailRead(path)
+	local ok, res = pcall(function()
+		local f = io.open(path, "r")
+		if not f then return nil end
+		local size = f:seek("end")
+		local from = size - TAIL_BYTES
+		if from < 0 then from = 0 end
+		f:seek("set", from)
+		local text = f:read("*a")
+		f:close()
+		if text and from > 0 and not text:find('Starting "multi/', 1, true) then
+			local g = io.open(path, "r")
+			if g then text = g:read("*a"); g:close() end
+		end
+		return text
+	end)
+	return ok and res or nil
+end
+
+-- Resolve the loaded map name by reading game.log from env-derived candidate paths.
+-- No hardcoded username; Proton is covered by USERPROFILE. First parse hit wins. nil if none.
+function ReadMapName()
+	if not (io and io.open and os and os.getenv) then return nil end
+	local up = os.getenv("USERPROFILE")
+	local home = os.getenv("HOME")
+	local candidates = {}
+	if up then
+		candidates[#candidates + 1] = up .. MAP_TAIL_WIN
+		candidates[#candidates + 1] = up .. [[\OneDrive]] .. MAP_TAIL_WIN
+	end
+	if home then candidates[#candidates + 1] = home .. MAP_TAIL_NIX end
+	for _, path in ipairs(candidates) do
+		local name = ParseMapName(TailRead(path))
+		if name then return name end
+	end
+	return nil
+end
+
 -- Label every live flag OWN / CONTESTED / ENEMY plus a rank toward the enemy home,
 -- from the precomputed Sectors table, oriented by this bot's team. Unknown maps fall
 -- back to all-CONTESTED. Writes Context.FlagLabel and Context.FlagBases. Never errors.

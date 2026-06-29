@@ -22,4 +22,21 @@ eq(ParseMapName(noisy), "2v2_mamayev_kurgan", "noisy")
 eq(ParseMapName("no starting line here"), nil, "no match")
 eq(ParseMapName(nil), nil, "nil input")
 
+-- TailRead reads a real file and the parse pipeline recovers the map name.
+do
+	local tmp = os.tmpname()
+	local f = assert(io.open(tmp, "w"))
+	f:write('prologue line\nStarting "multi/2v2_testmap:battle_zones"\nepilogue line\n')
+	f:close()
+	eq(ParseMapName(TailRead(tmp)), "2v2_testmap", "tailread pipeline")
+	eq(TailRead("/no/such/path/game.log"), nil, "tailread missing file")
+	os.remove(tmp)
+end
+
+-- ReadMapName never errors and returns a string or nil regardless of environment.
+do
+	local r = ReadMapName()
+	assert(r == nil or type(r) == "string", "ReadMapName returns string|nil")
+end
+
 print("mapname OK")
