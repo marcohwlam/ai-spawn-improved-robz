@@ -20,3 +20,13 @@ assert comp["f10"][2] > 0.59, comp["f10"]
 
 assert bs.fingerprint(flags) == "f1,f10,f2,f20,f3,f4,f5,f6,f7,f8,f9", bs.fingerprint(flags)
 print("build_sectors test OK")
+
+adj = bs.adjacency(bases, flags)
+nb_f1 = adj["f1"][0]
+assert "f8" in nb_f1 and "f7" in nb_f1, nb_f1            # f1's two nearest (1074, 1195)
+assert all(len(adj[n][0]) > 0 for n in flags), "no flag may be isolated"
+# symmetry: if f1 lists f8, f8 lists f1
+assert "f1" in adj["f8"][0], adj["f8"][0]
+# base adjacency: f5/f6 sit near a-side; at least one flag lists team 'a'
+assert any("a" in adj[n][1] for n in flags), "some flag should be a-base adjacent"
+print("adjacency test OK")
