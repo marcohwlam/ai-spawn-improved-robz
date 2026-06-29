@@ -50,6 +50,15 @@ assert "recharge=" not in out, out
 assert "unlock=" not in out, out
 print("inject zero OK")
 
+# --- recharge=0 with a real RobZ unlock: strip the zero, inject the unlock, NO mismatch ---
+# (the light-mortar case: bot.data left recharge=0 but RobZ gates it; RobZ is authoritative)
+LINE_M = '\t\t\t\t{priority=1.5, class=UnitClass.Mortar, unit="light_mortar_ger", recharge=0,},'
+out, rep = m.inject(LINE_M, {"light_mortar_ger": {"unlock": 30, "weight": None}})
+assert "recharge=" not in out, out
+assert "unlock=30" in out, out
+assert rep["mismatch"] == [], rep["mismatch"]
+print("inject zero-with-unlock OK")
+
 # --- widened id regex: hyphen ids (Japanese armor) and paren ids (infantry groups) ---
 HYPHEN = '{"chi-ha57" ("v" c(10) t(44 medium) s(jap) cp(20)) {level 1} {cost 400}} ;480sec'
 mh = m.parse_units(HYPHEN)

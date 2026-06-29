@@ -324,7 +324,9 @@ function TierOf(t)
 	elseif t.class == UnitClass.HeavyTank then
 		return "heavy"
 	elseif t.class == UnitClass.Tank then
-		return (t.weight == "medium") and "medium" or "light"
+		if t.weight == "heavy" or t.weight == "sheavy" then return "heavy"
+		elseif t.weight == "medium" then return "medium"
+		else return "light" end
 	elseif t.class == UnitClass.Vehicle then
 		return "light"
 	else

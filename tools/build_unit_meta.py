@@ -57,8 +57,10 @@ def _inject_line(line, info):
     is_tank = "class=UnitClass.Tank," in line
     mr = _RECHARGE.search(line)
     if mr:
-        expected = unlock if unlock is not None else 0
-        if int(mr.group(1)) != expected:
+        # recharge=0 carries no cooldown info -> always safe to strip. Only a NON-ZERO
+        # recharge that disagrees with the scraped unlock is a genuine conflict to flag.
+        rval = int(mr.group(1))
+        if rval != 0 and rval != (unlock or 0):
             return line, "mismatch"
     # strip any prior recharge/unlock/weight tokens (idempotency)
     new = _RECHARGE.sub("", line)
