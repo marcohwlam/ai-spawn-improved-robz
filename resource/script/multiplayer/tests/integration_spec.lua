@@ -5,8 +5,8 @@ dofile((arg[0]:gsub("integration_spec%.lua$", "harness.lua")))
 local units = {
 	{ class = UnitClass.Infantry,  unit = "rifle",   priority = 2.0, recharge = 0 },
 	{ class = UnitClass.Vehicle,   unit = "halftrk", priority = 1.0, recharge = 30 },
-	{ class = UnitClass.Tank,      unit = "lighttk", priority = 1.5, recharge = 420 },  -- light
-	{ class = UnitClass.Tank,      unit = "medtk",   priority = 1.5, recharge = 950 },  -- medium
+	{ class = UnitClass.Tank,      unit = "lighttk", priority = 1.5, weight = "light" },  -- light
+	{ class = UnitClass.Tank,      unit = "medtk",   priority = 1.5, weight = "medium" }, -- medium
 	{ class = UnitClass.HeavyTank, unit = "heavytk", priority = 1.0, recharge = 2000 }, -- heavy
 }
 
