@@ -237,6 +237,14 @@ Run a self-hosted bastogne 2v2 with AI on both teams, then confirm from game.log
 If 1, 2, 4 hold but 3 is violated, Phase 2 still proceeds but must use the collision-safe
 fallback (below) instead of trusting `idx`.
 
+**The playerId assumption is per-configuration.** A 2v2 all-AI lobby, a 3v3, and a
+human+bot mix assign ids differently (more players, humans possibly numbered before bots,
+host migration). Point 3 must be re-confirmed separately for EACH player configuration
+before Phase 2 trusts `idx` there. Any configuration not yet verified runs the
+collision-safe fallback (no partition), which is never worse than today. Phase 2 should
+log the observed `playerId`/`teamSize`/`idx` every match so new configurations surface in
+the log rather than silently mis-partitioning.
+
 **Phase 2 — Lateral Teammate Partition (gated, design below):**
 - Consume the Phase 1 labels + stored coords to split flags laterally between the two
   teammate bots so they do not contest the same point.
@@ -271,7 +279,16 @@ coords and assigns each flag to a teammate slot.
    the axis PERPENDICULAR to A->B -> `lat` (signed lateral position). Projection (not raw
    y) keeps this correct on maps whose bases differ on y.
 2. **Team index.** `team=="a"` -> `idx = playerId`; `team=="b"` -> `idx = playerId -
-   teamSize`. Range `1..teamSize` (2 in 2v2). This is the assumption the gate verifies.
+   teamSize`. Range `1..teamSize` (2 in 2v2, 3 in 3v3). This is the assumption the gate
+   verifies. The band count is `teamSize`, so the algorithm scales to any team size with
+   no code change — only the per-map data and the gate's id check must keep up.
+
+   **`teamSize` counts all players on the team, humans included, not just bots.** In a
+   human+bot mix each bot claims only its own `idx` band; the band whose `idx` belongs to
+   a human is claimed by no bot and is left to that human (who is not running this mod and
+   will not follow the band). Bots therefore still never overlap each other; the human's
+   lateral band is arbitrary and its coverage depends on the human. This is acceptable
+   but means partition does not guarantee full map coverage in mixed games.
 3. **Bands.** Sort flags by `lat`. Divide into `teamSize` outer bands plus a central
    SHARED band. `idx==1` claims the low-`lat` band, `idx==2` the high-`lat` band; the
    central band is claimed by both.
