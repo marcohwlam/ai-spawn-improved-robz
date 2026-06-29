@@ -820,6 +820,43 @@ function PartitionFlags()
 	end
 end
 
+-- One-shot diagnostic: dump the runtime environment so a captured log can reveal whether
+-- ANY map/scene identity or flag coordinate is reachable (to disambiguate maps with the
+-- same flag-name set). Pure introspection, every access pcall-guarded -- never errors.
+function MapProbe()
+	local function keys(label, t)
+		local ok, s = pcall(function()
+			local o = {}
+			for k in pairs(t) do o[#o + 1] = tostring(k) end
+			table.sort(o)
+			return table.concat(o, ",")
+		end)
+		print("[AISPAWN] MAPPROBE " .. label .. "=" .. (ok and s or "<not iterable>"))
+	end
+	keys("_G", _G)
+	keys("BotApi", BotApi)
+	keys("Instance", BotApi.Instance)
+	keys("Scene", BotApi.Scene)
+	keys("Commands", BotApi.Commands)
+	-- Speculative engine globals that might name the map/mission.
+	for _, g in ipairs({ "GetMissionName", "MissionName", "Mission", "mission",
+		"Map", "map", "GetMap", "Scene", "scene", "Game", "GameInfo", "GetSceneName" }) do
+		local ok, v = pcall(function() return _G[g] end)
+		print("[AISPAWN] MAPPROBE global." .. g .. "=" .. tostring(ok and v))
+	end
+	-- One flag object: list its fields, then probe speculative coordinate/id accessors.
+	local f1
+	for _, fl in pairs(BotApi.Scene.Flags) do f1 = fl; break end
+	if f1 then
+		keys("flag", f1)
+		for _, fld in ipairs({ "name", "occupant", "position", "pos", "point", "coord",
+			"x", "y", "z", "id", "tag", "mid", "index" }) do
+			local ok, v = pcall(function() return f1[fld] end)
+			print("[AISPAWN] MAPPROBE flag." .. fld .. "=" .. tostring(ok and v))
+		end
+	end
+end
+
 function OnGameStart()
 	-- START_PROBE: dump the BotApi surface so a captured log can show whether the engine
 	-- exposes any player/team count. Speculative fields print "nil" if they do not exist.
@@ -841,6 +878,7 @@ function OnGameStart()
 		.. " allies=" .. tostring(inst.allies)
 		.. " flags=" .. tostring(nflags)
 		.. " squads=" .. tostring(nsquads))
+	MapProbe()
 	LabelFlags()
 	PartitionFlags()
 	math.randomseed(os.time() * BotApi.Instance.hostId)
