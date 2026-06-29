@@ -45,7 +45,9 @@ KFLOOR = 2
 
 def adjacency(bases, flags):
     """Return {name: (nb_list, base_list)}. nb = flags within THRESH unioned with the
-    KFLOOR nearest, made symmetric. base = sorted team letters whose base is within THRESH."""
+    KFLOOR nearest, made symmetric. base = sorted team letters whose base is within THRESH
+    unioned with the KFLOOR nearest flags to each base (so every base labels at least its
+    2 nearest flags)."""
     names = list(flags.keys())
     nb = {n: set() for n in names}
     for a in names:

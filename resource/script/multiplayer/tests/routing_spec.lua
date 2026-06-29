@@ -54,4 +54,23 @@ BotApi.Scene.Flags = bastogne({ f10 = "b" })
 LabelFlags(); PartitionFlags()
 eq(PickGroupTarget(nil), "f10", "lone deep enemy flag still targeted")
 
+-- Tier 3 closest-distance ordering: own f5 (home secure), enemy holds two non-frontier
+-- CONTESTED flags. f1 (d^2=5586701) is closer to f5 than f3 (d^2=5970989); tier 3 picks f1.
+BotApi.Instance.playerId = 1
+Context.LostStamp = {}
+BotApi.Scene.Flags = bastogne({ f5 = "a", f1 = "b", f3 = "b" })
+LabelFlags(); PartitionFlags()
+eq(PickGroupTarget(nil), "f1", "tier3 picks the closer enemy flag")
+eq(Context.LastPickTier, 3, "f1 picked at tier 3")
+
+-- Untrusted partition own-all: playerId=3 outside 1..teamSize makes PartitionFlags set
+-- mine=true on every flag. Enemy holds f8 (CONTESTED, frontier via f5 in f8.nb), which
+-- qualifies for tier 2 under own-all. PickGroupTarget must return non-nil.
+BotApi.Instance.playerId = 3
+Context.LostStamp = {}
+BotApi.Scene.Flags = bastogne({ f5 = "a", f8 = "b" })
+LabelFlags(); PartitionFlags()
+local ownall_pick = PickGroupTarget(nil)
+eq(ownall_pick ~= nil, true, "own-all: tier2 still returns a target")
+
 print("routing OK")
