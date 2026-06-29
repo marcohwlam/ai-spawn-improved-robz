@@ -871,9 +871,52 @@ function MapProbe()
 		end)
 		print("[AISPAWN] MAPPROBE write_test=" .. tostring(okw))
 	end
+	-- Engine root objects never dumped before. `root` is in _G and may expose scene/mission
+	-- identity natively -- portable, no log scraping. `package`/`log` listed for completeness.
+	for _, g in ipairs({ "root", "package", "log" }) do
+		local ok, v = pcall(function() return _G[g] end)
+		print("[AISPAWN] MAPPROBE global." .. g .. "=" .. tostring(ok and v)
+			.. " type=" .. tostring(type(_G[g])))
+		keys(g, _G[g])
+	end
+	-- If `root` holds an object, probe speculative map-name accessors on it.
+	if type(root) == "table" or type(root) == "userdata" then
+		for _, fld in ipairs({ "name", "scene", "Scene", "mission", "Mission", "map", "Map",
+			"sceneName", "missionName", "GetName", "GetScene", "GetMission" }) do
+			local ok, v = pcall(function() return root[fld] end)
+			print("[AISPAWN] MAPPROBE root." .. fld .. "=" .. tostring(ok and v))
+		end
+	end
+	-- Env-based log-path discovery. Proton path is deterministic (user is always steamuser);
+	-- on native Windows the user folder comes from USERPROFILE. Tail is a game constant.
 	if os and os.getenv then
-		print("[AISPAWN] MAPPROBE env_PWD=" .. tostring(os.getenv("PWD"))
-			.. " env_CD=" .. tostring(os.getenv("CD")))
+		for _, e in ipairs({ "PWD", "CD", "USERPROFILE", "USERNAME", "APPDATA",
+			"HOMEDRIVE", "HOMEPATH", "HOME" }) do
+			print("[AISPAWN] MAPPROBE env." .. e .. "=" .. tostring(os.getenv(e)))
+		end
+		-- Read the real game.log and keep the last `Starting "multi/<MAP>"` line: that names
+		-- the loaded map and would break the flag-name fingerprint collision across 20 maps.
+		local tail = [[\Documents\my games\men of war - assault squad 2\log\game.log]]
+		local function scanForMap(path)
+			local ok, res = pcall(function()
+				local f = io.open(path, "r")
+				if not f then return "nil" end
+				local hit = "no-Starting-line"
+				for line in f:lines() do
+					if line:find("Starting", 1, true) and line:find("multi/", 1, true) then
+						hit = line
+					end
+				end
+				f:close()
+				return hit
+			end)
+			print("[AISPAWN] MAPPROBE scan[" .. path .. "]=" .. tostring((ok and res) or "<err>"))
+		end
+		if io and io.open then
+			scanForMap([[C:\users\steamuser\Documents\my games\men of war - assault squad 2\log\game.log]])
+			local up = os.getenv("USERPROFILE")
+			if up then scanForMap(up .. tail) end
+		end
 	end
 	-- One flag object: list its fields, then probe speculative coordinate/id accessors.
 	local f1
