@@ -705,6 +705,19 @@ function FlagFingerprint()
 	return table.concat(names, ",")
 end
 
+-- Extract the loaded map's base name from game.log text. The engine writes
+-- `Starting "multi/<X>:<variant>"` at match start; the LAST such line names the current
+-- map. Returns the token between `multi/` and the first `:` or `"`, or nil. Pure (no io).
+function ParseMapName(text)
+	if not text then return nil end
+	local found
+	for line in text:gmatch("[^\r\n]+") do
+		local tok = line:match('Starting "multi/([^:"]+)')
+		if tok then found = tok end
+	end
+	return found
+end
+
 -- Label every live flag OWN / CONTESTED / ENEMY plus a rank toward the enemy home,
 -- from the precomputed Sectors table, oriented by this bot's team. Unknown maps fall
 -- back to all-CONTESTED. Writes Context.FlagLabel and Context.FlagBases. Never errors.
