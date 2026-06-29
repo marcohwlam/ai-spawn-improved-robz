@@ -94,6 +94,11 @@ local MaxLiveSquads = 24
 local SectorOwnMax   = 0.4  -- myAxis below this => OWN
 local SectorEnemyMin = 0.6  -- myAxis above this => ENEMY; between the two => CONTESTED
 
+-- Half-width (normalized lateral units [0,1]) of the SHARED band around each internal
+-- teammate-band boundary. Flags within this margin belong to both teammates on purpose;
+-- narrower = cleaner split, wider = more overlap/coverage. Tunable.
+local PartSharedHalfWidth = 0.15
+
 -- Composition is driven by a core infantry : tank ratio. Auxiliary units do not
 -- count toward the ratio; they are injected up to a cap and filtered by trigger.
 local Ratio      = 4    -- target core infantry per tank (4:1)
@@ -742,6 +747,75 @@ function LabelFlags()
 		print("[AISPAWN] SECTOR pid=" .. tostring(pid) .. " team=" .. tostring(team)
 			.. " " .. p.name .. " sector=" .. sector .. " rank=" .. rank
 			.. " axis=" .. string.format("%.2f", p.myAxis))
+	end
+end
+
+-- Split the labeled flags laterally between teammate bots. Pure geometry over the Phase 1
+-- coords: project each flag onto the axis perpendicular to A->B, band by normalized lateral
+-- position, and mark band / shared / mine. Compute + log only -- issues no orders. Two
+-- teammates compute an identical partition (same data, same teamSize); only `mine` differs.
+-- Collision-safe: if this bot's idx is outside 1..teamSize (the playerId assumption failed),
+-- every flag is marked mine (own-all = no partition). nil FlagBases => skip + PART_FALLBACK.
+function PartitionFlags()
+	Context.FlagOwner = {}
+	local bases = Context.FlagBases
+	local team = BotApi.Instance.team
+	local pid = BotApi.Instance.playerId
+	local teamSize = BotApi.Instance.teamSize
+	if not bases or not teamSize or teamSize < 1 then
+		print("[AISPAWN] PART_FALLBACK reason=no_bases")
+		return
+	end
+	-- A-home and B-home centroids from the base spawns (names start with "a" / "b").
+	local ax, ay, an, bx, by, bn = 0, 0, 0, 0, 0, 0
+	for name, b in pairs(bases) do
+		if string.sub(name, 1, 1) == "a" then ax = ax + b.x; ay = ay + b.y; an = an + 1
+		elseif string.sub(name, 1, 1) == "b" then bx = bx + b.x; by = by + b.y; bn = bn + 1 end
+	end
+	if an == 0 or bn == 0 then
+		print("[AISPAWN] PART_FALLBACK reason=missing_side")
+		return
+	end
+	ax, ay, bx, by = ax / an, ay / an, bx / bn, by / bn
+	-- Forward axis A->B = (fx, fy); lateral axis is the perpendicular (-fy, fx).
+	local fx, fy = bx - ax, by - ay
+	local px, py = -fy, fx
+	-- Each labeled flag's signed lateral projection, relative to the A centroid.
+	local flags = {}
+	for name, lab in pairs(Context.FlagLabel) do
+		if lab.x and lab.y then
+			local lat = (lab.x - ax) * px + (lab.y - ay) * py
+			flags[#flags + 1] = { name = name, lat = lat }
+		end
+	end
+	if #flags == 0 then
+		print("[AISPAWN] PART_FALLBACK reason=no_coords")
+		return
+	end
+	-- Normalize lateral to [0,1] across the present flags.
+	local lo, hi = flags[1].lat, flags[1].lat
+	for _, f in ipairs(flags) do
+		if f.lat < lo then lo = f.lat end
+		if f.lat > hi then hi = f.lat end
+	end
+	local span = hi - lo
+	-- This bot's team index, and whether it is in range (the gate-verified assumption).
+	local idx = (team == "b") and (pid - teamSize) or pid
+	local idxTrusted = (idx >= 1 and idx <= teamSize)
+	for _, f in ipairs(flags) do
+		local u = (span > 0) and ((f.lat - lo) / span) or 0.5
+		local band = math.floor(u * teamSize) + 1
+		if band > teamSize then band = teamSize end
+		local shared = false
+		for k = 1, teamSize - 1 do
+			if math.abs(u - k / teamSize) <= PartSharedHalfWidth then shared = true; break end
+		end
+		local mine = (not idxTrusted) or shared or (band == idx)
+		Context.FlagOwner[f.name] = { band = band, shared = shared, mine = mine, lat = f.lat }
+		print("[AISPAWN] PART pid=" .. tostring(pid) .. " team=" .. tostring(team)
+			.. " idx=" .. tostring(idx) .. " trusted=" .. tostring(idxTrusted)
+			.. " " .. f.name .. " band=" .. band
+			.. " shared=" .. tostring(shared) .. " mine=" .. tostring(mine))
 	end
 end
 
