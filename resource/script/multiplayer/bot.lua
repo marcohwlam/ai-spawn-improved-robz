@@ -787,7 +787,8 @@ function LabelFlags()
 		local d = entry.flags[flag.name]
 		if d then
 			local myAxis = (team == "b") and (1 - d.axis) or d.axis
-			present[#present + 1] = { name = flag.name, myAxis = myAxis, x = d.x, y = d.y }
+			present[#present + 1] = { name = flag.name, myAxis = myAxis, x = d.x, y = d.y,
+				nb = d.nb, base = d.base }
 		else
 			Context.FlagLabel[flag.name] = { sector = "CONTESTED" } -- present but unmapped
 		end
@@ -802,11 +803,31 @@ function LabelFlags()
 		local sector = "CONTESTED"
 		if p.myAxis < SectorOwnMax then sector = "OWN"
 		elseif p.myAxis >= SectorEnemyMin then sector = "ENEMY" end
-		Context.FlagLabel[p.name] = { sector = sector, rank = rank, axis = p.myAxis, x = p.x, y = p.y }
+		Context.FlagLabel[p.name] = { sector = sector, rank = rank, axis = p.myAxis,
+			x = p.x, y = p.y, nb = p.nb, base = p.base }
 		print("[AISPAWN] SECTOR pid=" .. tostring(pid) .. " team=" .. tostring(team)
 			.. " " .. p.name .. " sector=" .. sector .. " rank=" .. rank
 			.. " axis=" .. string.format("%.2f", p.myAxis))
 	end
+end
+
+-- A flag is on the frontier if a neighbor is held by our team, or it is adjacent to our base.
+-- Needs the offline adjacency graph (Context.FlagLabel[name].nb/base); false without it.
+function IsFrontier(name)
+	local label = Context.FlagLabel[name]
+	if not label or not label.nb then return false end
+	local team = BotApi.Instance.team
+	if label.base then
+		for _, t in ipairs(label.base) do
+			if t == team then return true end
+		end
+	end
+	for _, nbname in ipairs(label.nb) do
+		for _, flag in pairs(BotApi.Scene.Flags) do
+			if flag.name == nbname and flag.occupant == team then return true end
+		end
+	end
+	return false
 end
 
 -- Split the labeled flags laterally between teammate bots. Pure geometry over the Phase 1
