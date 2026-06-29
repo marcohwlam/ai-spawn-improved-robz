@@ -9,18 +9,44 @@ and is gated on the previous one being verified in a real match.
 |---|---|---|
 | 1 — Flag labeling | OWN/CONTESTED/ENEMY + enemy-distance rank → `Context.FlagLabel` | ✅ shipped |
 | 2 — Lateral partition (compute+log) | teammate non-overlap split → `Context.FlagOwner` | ✅ shipped |
-| Gate | Self-hosted bastogne 2v2: confirm SECTOR/PART logs + playerId contiguous-by-team | ⏸ pending (user runs) |
-| 3 — Routing layer | Consume the labels in flag selection (frontier + partition + sector/rank) | ⬜ gated on the Gate |
+| ReadMapName | Map name from game.log → sole `Sectors` key (replaces colliding fingerprint) | ✅ shipped |
+| Gate | Self-hosted bastogne 2v2: SECTOR/PART logs + playerId contiguous-by-team | ⚠ ran — SECTOR ✅, playerId contiguity ❌ DISPROVEN |
+| 3 — Routing layer | Consume the labels in flag selection (frontier + partition + sector/rank) | ⬜ NEXT |
 
-Specs: `specs/2026-06-28-flag-labeling-design.md`. Plans: `plans/2026-06-28-flag-labeling-phase1.md`, `plans/2026-06-28-flag-labeling-phase2.md`.
+Specs: `specs/2026-06-28-flag-labeling-design.md`, `specs/2026-06-29-readmapname-design.md`. Plans: `plans/2026-06-28-flag-labeling-phase1.md`, `plans/2026-06-28-flag-labeling-phase2.md`, `plans/2026-06-29-readmapname.md`.
 
-## Gate (precondition for Phase 3)
+## Gate result (ran 2026-06-29, bastogne 2v2)
 
-Run a self-hosted bastogne 2v2 with AI on both teams; from game.log confirm:
-1. `SECTOR …` lines present, no `SECTOR_FALLBACK` (fingerprint matched).
-2. `PART … trusted=true` for every bot (idx in range ⇒ playerId contiguous-by-team holds), confirmed across ≥2 matches.
-3. Teammate `mine=true` sets are complementary (no two teammates exclusively own the same flag).
-If 2 fails, Phase 3 still ships but the partition stays in its collision-safe own-all mode for that player configuration.
+1. `SECTOR …` lines present, **no `SECTOR_FALLBACK`** ✅ — ReadMapName resolved `2v2_bastogne` and `Sectors[name]` hit. Sector values byte-identical to the known-good baseline (f10 ENEMY rank1 axis 0.60; f5/f6 OWN). Map identity is now SOLVED for all maps that exist in the table.
+2. **playerId contiguous-by-team: DISPROVEN.** Match 1 was `a={1,2} b={3,4}` (contiguous, lucky). Match 2 was `a={1,4} b={2,3}` (interleaved). The engine assigns playerId by hostId ascending while teams are slotted in any order, so contiguity does NOT hold. Consequence: `PART trusted=false` for the out-of-range bots (idx 0 / idx 4 on teamSize 2) → those bots fall to collision-safe own-all. No crash; the partition simply does not deconflict that match.
+3. Teammate `mine` sets complementary on the trusted bots; the untrusted bots own-all (overlap, not a clean split).
+
+## Phase 3 — the team-index problem to resolve first
+
+The lateral partition needs each bot to know its **index within its team** (1..teamSize).
+The bot sandbox exposes no teammate roster (`players`/`teamPlayers` are nil), and the
+playerId-contiguity proxy is now disproven. Two findings close the cheap escape routes:
+
+- **game.log has NO roster.** Verified 2026-06-29: the only roster lines are
+  `Game: Create team a 'Team A' (usa)` / `team b (ger)` — team→army only, no
+  player→team→slot mapping. Log-scraping a roster is a dead end.
+- **Bots CAN write files** (`write_test=true`, all bots share the game-install cwd). A
+  bot-to-bot **scratch-file roster channel** is the only robust path to a true team-index:
+  each bot writes `team playerId` at OnGameStart, then a tick later (first Quant) reads the
+  file, collects its team's playerIds, sorts, and takes its own rank as the index. Cost:
+  file-race handling (write at start, read one Quant later) + complexity.
+
+**Decision for Phase 3 kickoff (pick one):**
+- **(A) Accept own-all when non-contiguous** — ship routing now; partition deconflicts only
+  on matches where playerId happens to be contiguous, own-all otherwise. Simple, safe,
+  zero new I/O. Both reference mods (frontlines-ai, cbyyy) have no spatial dedup at all, so
+  this is not a regression.
+- **(B) Scratch-file roster channel** — robust deconfliction on every slot layout, at the
+  cost of a filesystem handshake with race handling.
+
+Recommendation: start Phase 3 with **frontier + sector/rank routing (no partition dependency)**
+and treat partition deconfliction as an independent sub-feature gated on the A/B decision —
+do not block the routing layer on solving the team-index problem.
 
 ## Phase 3 — Routing layer (design intent)
 
