@@ -32,6 +32,8 @@ Context = {
 	FailCooldown = {}, -- unit.unit -> MatchQuants tick of last FAILED spawn (skip a while)
 	PrevOwned = {},    -- flag name -> true if we owned it last tick
 	LostStamp = {},    -- flag name -> MatchQuants when we lost it (recapture priority)
+	FlagLabel = {},    -- flag name -> {sector, rank, axis, x, y}; set by LabelFlags at start
+	FlagBases = nil,   -- the matched map's base coords, or nil on an unrecognized map
 }
 
 -- Wave spawning. The engine accepts at most ~1 Spawn per quant tick, so a wave
@@ -764,6 +766,7 @@ function OnGameStart()
 		.. " allies=" .. tostring(inst.allies)
 		.. " flags=" .. tostring(nflags)
 		.. " squads=" .. tostring(nsquads))
+	LabelFlags()
 	math.randomseed(os.time() * BotApi.Instance.hostId)
 	math.random() math.random() math.random()
 	Context.Purchase = PIter:new(Purchases)
