@@ -11,7 +11,7 @@ and is gated on the previous one being verified in a real match.
 | 2 — Lateral partition (compute+log) | teammate non-overlap split → `Context.FlagOwner` | ✅ shipped |
 | ReadMapName | Map name from game.log → sole `Sectors` key (replaces colliding fingerprint) | ✅ shipped |
 | Gate | Self-hosted bastogne 2v2: SECTOR/PART logs + playerId contiguous-by-team | ⚠ ran — SECTOR ✅, playerId contiguity ❌ DISPROVEN |
-| 3 — Routing layer | Consume the labels in flag selection (frontier + partition + sector/rank) | ⬜ NEXT |
+| 3 — Routing layer | `PickGroupTarget` defensive-first tier ladder (frontier + partition + sector) | ✅ shipped — verify in-game |
 
 Specs: `specs/2026-06-28-flag-labeling-design.md`, `specs/2026-06-29-readmapname-design.md`. Plans: `plans/2026-06-28-flag-labeling-phase1.md`, `plans/2026-06-28-flag-labeling-phase2.md`, `plans/2026-06-29-readmapname.md`.
 
