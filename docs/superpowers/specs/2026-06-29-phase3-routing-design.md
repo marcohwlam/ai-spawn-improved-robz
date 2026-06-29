@@ -39,6 +39,10 @@ precomputed into `flag_sectors.lua`.
 - **Distance threshold 2000 units, with a 2-nearest-neighbor floor** so no flag is ever isolated
   on a differently-scaled map. Validated on bastogne (nearest-neighbor spacing 1074-1795; at 2000
   every flag has 2-4 neighbors, zero isolated; 1500 isolates f5/f6; 3000 over-connects).
+- **Base adjacency uses the same 2-nearest floor:** each base labels its 2 nearest flags (unioned
+  with any flag within 2000) with that base's team letter. Bases sit farther back than flags
+  (bastogne's nearest flag-to-base is 2737 > 2000), so a pure distance rule would label none;
+  the 2-nearest floor guarantees each base's home flags are marked (bastogne: a→f5,f6; b→f4,f8,f10).
 - **Partition is best-effort:** trusted bots filter to `mine`; untrusted bots keep all (own-all).
   No team-index fix this phase (deferred; see roadmap).
 - **The ladder is a tier score over a candidate set, not hard filters.** Tier 3 is a catch-all, so
@@ -110,7 +114,8 @@ team letter (F is adjacent to our own base). Requires the offline graph; absent 
 
 ```
 build_sectors.py:  for each flag  nb = {flags with dist < 2000}  U  {2 nearest}   (symmetric)
-                                   base = { team letters whose base is within 2000 }
+                                   base = { team letters whose base lists this flag among
+                                            its 2 nearest, U any base within 2000 }
         |  (offline)
         v
 flag_sectors.lua:  Sectors[map].flags[f] = {x, y, axis, nb={...}, base={...}}
@@ -129,7 +134,8 @@ UpdateGroupTargets sets group.target  ->  CaptureFlag issues the order
 
 1. **`build_sectors.py`** — for each flag compute `nb` (flags within 2000 units, unioned with the
    2 nearest, made symmetric) and `base` (list of team letters `"a"`/`"b"` whose base a1/a2/b1/b2
-   is within 2000 units). Emit both into each flag entry. Regenerate the 4 maps.
+   counts this flag among its 2 nearest, unioned with any base within 2000 units). Emit both into
+   each flag entry. Regenerate the 4 maps.
 2. **`flag_sectors.lua` schema** — each flag entry gains `nb = {"f7","f8"}` and optional
    `base = {"a"}`. Generated file; data values for x/y/axis unchanged.
 3. **`LabelFlags`** — copy `nb` and `base` from the matched sector entry into
