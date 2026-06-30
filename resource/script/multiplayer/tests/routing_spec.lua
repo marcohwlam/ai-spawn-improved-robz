@@ -83,4 +83,44 @@ LabelFlags(); PartitionFlags()
 local ownall_pick = PickGroupTarget(nil)
 eq(ownall_pick ~= nil, true, "own-all: tier2 still returns a target")
 
+-- === Task 1: FlagTier, preemption, ReorderGroup ===
+
+-- FlagTier matches the tier the inline classifier produced.
+Context.LostStamp = {}
+BotApi.Scene.Flags = bastogne({ f5 = "b", f10 = "b" })   -- f5 OWN-sector held by enemy
+LabelFlags(); PartitionFlags()
+eq(FlagTier("f5"), 1, "FlagTier: enemy on OWN flag is tier 1")
+eq(FlagTier("f10"), 3, "FlagTier: deep enemy flag is tier 3")
+eq(FlagTier("f2"), nil, "FlagTier: neutral flag with no LostStamp is not a candidate")
+
+-- Preemption: group 1 holding a tier-3 target switches when a tier-2 flag appears,
+-- and ReorderGroup re-issues CaptureFlag to the member squad.
+Context.LostStamp = {}
+Context.Groups = {}
+Context.SquadGroup = { s1 = 1 }
+Context.FieldUnits = { s1 = { unit = "x" } }
+BotApi.Scene.Flags = bastogne({ f10 = "b" })             -- only deep enemy -> tier 3
+LabelFlags(); PartitionFlags()
+Context.Groups[1] = { members = { s1 = true }, size = 5, target = "f10", pending = 0 }
+local captured = {}
+local realCapture = BotApi.Commands.CaptureFlag
+BotApi.Commands.CaptureFlag = function(_, squad, flag) captured[squad] = flag end
+-- f6 held by a (own base) makes f7 a frontier flag; enemy holds f7 -> tier 2.
+BotApi.Scene.Flags = bastogne({ f6 = "a", f7 = "b", f10 = "b" })
+LabelFlags(); PartitionFlags()
+UpdateGroupTargets()
+eq(Context.Groups[1].target, "f7", "preempt: tier3 f10 -> tier2 f7")
+eq(captured.s1, "f7", "ReorderGroup re-issued capture to member on switch")
+
+-- No preemption within the same tier: a closer tier-3 flag does not displace the
+-- current tier-3 target.
+Context.Groups = {}
+Context.SquadGroup = {}
+BotApi.Scene.Flags = bastogne({ f5 = "a", f1 = "b", f3 = "b" })   -- f1,f3 tier-3 enemy
+LabelFlags(); PartitionFlags()
+Context.Groups[1] = { members = {}, size = 5, target = "f3", pending = 0 }
+UpdateGroupTargets()
+eq(Context.Groups[1].target, "f3", "same-tier closer candidate does not preempt")
+BotApi.Commands.CaptureFlag = realCapture
+
 print("routing OK")

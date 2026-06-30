@@ -451,20 +451,41 @@ function ManageGroups()
 	end
 end
 
+-- Re-issue the capture order to every live member of a group immediately, so a
+-- target change takes effect without waiting for the OrderRotationPeriod timer.
+function ReorderGroup(gi)
+	local g = Context.Groups[gi]
+	if not g then return end
+	for squad in pairs(g.members) do
+		if BotApi.Scene:IsSquadExists(squad) then
+			CaptureFlag(squad)
+		end
+	end
+end
+
 -- Refresh each group's target: if nil or the flag is gone, re-pick de-conflicted from the other.
 function UpdateGroupTargets()
 	local g1 = Context.Groups[1]
 	local g2 = Context.Groups[2]
 	if g1 then
 		local other = g2 and g2.target
+		local newT
 		if not g1.target or not FlagAttackable(g1.target) then
-			local newT = PickGroupTarget(other)
-			if newT and newT ~= g1.target then
-				print("[AISPAWN] GROUP_TARGET id=1 target=" .. tostring(newT)
-					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority")
-					.. " tier=" .. tostring(Context.LastPickTier) .. PidTag())
+			newT = PickGroupTarget(other)
+		else
+			local cand = PickGroupTarget(other)
+			local ct = cand and FlagTier(cand)
+			local gt = FlagTier(g1.target)
+			if ct and gt and ct < gt then
+				newT = cand
 			end
+		end
+		if newT and newT ~= g1.target then
+			print("[AISPAWN] GROUP_TARGET id=1 target=" .. tostring(newT)
+				.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority")
+				.. " tier=" .. tostring(Context.LastPickTier) .. PidTag())
 			g1.target = newT
+			ReorderGroup(1)
 		end
 	end
 	if g2 then
@@ -1452,37 +1473,56 @@ function NearestOwnedDist(label)
 	return best
 end
 
--- The group's attack flag, by a defensive-first tier ladder over candidates
--- (enemy-held flags + neutral flags we recently lost), excluding excludeName.
--- Tier 1: enemy holds/attacks an OWN-sector flag (home invaded; any lane).
--- Tier 2: a mine + frontier + CONTESTED flag the enemy holds/attacks (our lane's front).
--- Tier 3: everything else -> closest next flag (expand). Tier 3 is the catch-all, so this
--- returns nil only when no candidate exists. Sets Context.LastPickTier for logging.
-function PickGroupTarget(excludeName)
+-- Classify a flag into the attack tier ladder, or nil when it is not a valid
+-- candidate (not enemy-held and not a recently-lost neutral).
+-- Tier 1: enemy holds/attacks an OWN-sector flag (home invaded).
+-- Tier 2: a mine + frontier + CONTESTED flag the enemy holds (our lane front).
+-- Tier 3: every other enemy/attacked flag (expand).
+function FlagTier(name)
 	local team = BotApi.Instance.team
 	local enemy = BotApi.Instance.enemyTeam
+	local flag
+	for _, f in pairs(BotApi.Scene.Flags) do
+		if f.name == name then flag = f; break end
+	end
+	if not flag then return nil end
+	local held = flag.occupant == enemy
+	local attacking = flag.occupant ~= team and flag.occupant ~= enemy
+		and Context.LostStamp[name] ~= nil
+	if not (held or attacking) then return nil end
+	local label = Context.FlagLabel[name] or {}
+	local owner = Context.FlagOwner[name]
+	if label.sector == "OWN" then
+		return 1
+	elseif owner and owner.mine and label.sector == "CONTESTED" and IsFrontier(name) then
+		return 2
+	else
+		return 3
+	end
+end
+
+-- The group's attack flag, by the FlagTier ladder over candidates, excluding
+-- excludeName. Within a tier, lower key wins (tier 1/2 by lane axis, tier 3 by
+-- distance to our nearest owned flag, then recapture recency). Sets
+-- Context.LastPickTier for logging. Returns nil only when no candidate exists.
+function PickGroupTarget(excludeName)
 	local best
 	for _, flag in pairs(BotApi.Scene.Flags) do
 		local name = flag.name
 		if name ~= excludeName then
-			local held = flag.occupant == enemy
-			local attacking = flag.occupant ~= team and flag.occupant ~= enemy
-				and Context.LostStamp[name] ~= nil
-			if held or attacking then
+			local tier = FlagTier(name)
+			if tier then
 				local label = Context.FlagLabel[name] or {}
-				local owner = Context.FlagOwner[name]
-				local tier, key
-				if label.sector == "OWN" then
-					tier, key = 1, label.axis or 1
-				elseif owner and owner.mine and label.sector == "CONTESTED" and IsFrontier(name) then
-					tier, key = 2, label.axis or 1
+				local key
+				if tier == 1 or tier == 2 then
+					key = label.axis or 1
 				else
 					local d = NearestOwnedDist(label)
 					if d then
-						tier, key = 3, d
+						key = d
 					else
 						local stamp = Context.LostStamp[name]
-						tier, key = 3, (stamp and -stamp or (1e9 - GetFlagPriority(flag)))
+						key = (stamp and -stamp or (1e9 - GetFlagPriority(flag)))
 					end
 				end
 				if not best or tier < best.tier
