@@ -60,6 +60,19 @@ assert(ArtilleryFlagPriority(ownRear, fieldEntry) > ArtilleryFlagPriority(enemy,
 	"owned beats non-owned")
 print("ArtilleryFlagPriority OK")
 
+-- missing FlagLabel entry: axis defaults to 0.5 (unknown-map degradation)
+Context.FlagLabel = {}                                  -- no labels at all
+local unlabeled = { name = "fX", occupant = 1 }         -- owned, unlabeled
+assert(math.abs(ArtilleryFlagPriority(unlabeled, { arty = "rocket" }) - 1.6) < 1e-9,
+	"missing-label rocket defaults to axis 0.5 -> 1.6")
+
+-- nil entry falls to the field branch without erroring
+Context.FlagLabel = { fField = { axis = 0.20 } }
+local ownedField = { name = "fField", occupant = 1 }
+assert(math.abs(ArtilleryFlagPriority(ownedField, nil) - (0.1 + 1.0 * 0.20)) < 1e-9,
+	"nil entry -> field branch weight")
+print("ArtilleryFlagPriority edge cases OK")
+
 -- CaptureFlag routes an artillery defender to its preferred owned flag.
 -- Capture the engine call by stubbing BotApi.Commands:CaptureFlag.
 local routed = nil
