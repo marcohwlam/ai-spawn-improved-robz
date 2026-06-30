@@ -106,8 +106,9 @@ function AdvanceClock()
 	Context.LastWall = now
 end
 
-local GroupSize = 8   -- target member count per group
-local MaxGroups = 1   -- live groups at a time (1 = single concentrated push; raise for more fronts)
+local MainGroupSize = 5   -- main prong member count
+local SubGroupSize  = 3   -- sub prong member count
+local MaxGroups = 2       -- main + sub prongs on adjacent flags
 
 -- Hard ceiling on this bot's OWN live squads (combat fill). The engine is 32-bit (~2GB);
 -- on team games every AI bot runs this script, so per-bot count multiplies. Aux counts 0.5
@@ -439,13 +440,13 @@ function PidTag() return " pid=" .. tostring(BotApi.Instance.playerId) end
 function ManageGroups()
 	if not Context.Groups[1] then
 		local t = PickGroupTarget(nil)
-		Context.Groups[1] = { members = {}, size = GroupSize, target = t, pending = 0,
+		Context.Groups[1] = { members = {}, size = MainGroupSize, target = t, pending = 0,
 			phase = CurrentPhase(Elapsed()).name }
 		print("[AISPAWN] GROUP_NEW id=1 target=" .. tostring(t) .. PidTag())
 	elseif MaxGroups >= 2 and not Context.Groups[2]
 	   and GroupMemberCount(Context.Groups[1]) >= Context.Groups[1].size then
-		local t = PickGroupTarget(Context.Groups[1].target)
-		Context.Groups[2] = { members = {}, size = GroupSize, target = t, pending = 0,
+		local t = PickSubTarget(Context.Groups[1].target)
+		Context.Groups[2] = { members = {}, size = SubGroupSize, target = t, pending = 0,
 			phase = CurrentPhase(Elapsed()).name }
 		print("[AISPAWN] GROUP_NEW id=2 target=" .. tostring(t) .. PidTag())
 	end
@@ -461,6 +462,30 @@ function ReorderGroup(gi)
 			CaptureFlag(squad)
 		end
 	end
+end
+
+-- The sub group's flag: the attackable objective nearest the main group's target
+-- (by flag coords), excluding the main target. Falls back to the main target when
+-- no other objective exists, so the sub never idles. nil when there is no main.
+function PickSubTarget(mainTarget)
+	if not mainTarget then return nil end
+	local mainLabel = Context.FlagLabel[mainTarget]
+	local best, bestKey
+	for _, flag in pairs(BotApi.Scene.Flags) do
+		local name = flag.name
+		if name ~= mainTarget and FlagTier(name) ~= nil then
+			local label = Context.FlagLabel[name]
+			local key = 1e18
+			if mainLabel and mainLabel.x and label and label.x then
+				local dx, dy = label.x - mainLabel.x, label.y - mainLabel.y
+				key = dx * dx + dy * dy
+			end
+			if not best or key < bestKey or (key == bestKey and name < best) then
+				best, bestKey = name, key
+			end
+		end
+	end
+	return best or mainTarget
 end
 
 -- Refresh each group's target: if nil or the flag is gone, re-pick de-conflicted from the other.
@@ -489,15 +514,13 @@ function UpdateGroupTargets()
 		end
 	end
 	if g2 then
-		local other = g1 and g1.target
-		if not g2.target or not FlagAttackable(g2.target) then
-			local newT = PickGroupTarget(other)
-			if newT and newT ~= g2.target then
-				print("[AISPAWN] GROUP_TARGET id=2 target=" .. tostring(newT)
-					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority")
-					.. " tier=" .. tostring(Context.LastPickTier) .. PidTag())
-			end
+		local mainT = g1 and g1.target
+		local newT = PickSubTarget(mainT)
+		if newT and newT ~= g2.target then
+			print("[AISPAWN] GROUP_TARGET id=2 target=" .. tostring(newT)
+				.. " reason=sub" .. PidTag())
 			g2.target = newT
+			ReorderGroup(2)
 		end
 	end
 end

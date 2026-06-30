@@ -123,4 +123,39 @@ UpdateGroupTargets()
 eq(Context.Groups[1].target, "f3", "same-tier closer candidate does not preempt")
 BotApi.Commands.CaptureFlag = realCapture
 
+-- === Task 2: PickSubTarget ===
+
+-- Sub picks the objective nearest to the main target, excluding the main target.
+Context.LostStamp = {}
+BotApi.Scene.Flags = bastogne({ f5 = "a", f1 = "b", f3 = "b" })   -- f1,f3 are tier-3 objectives
+LabelFlags(); PartitionFlags()
+eq(PickSubTarget("f1"), "f3", "sub picks the other objective near main")
+
+-- Only one objective on the map: sub falls back to the main target.
+Context.LostStamp = {}
+BotApi.Scene.Flags = bastogne({ f10 = "b" })
+LabelFlags(); PartitionFlags()
+eq(PickSubTarget("f10"), "f10", "sub falls back to main target when no other objective")
+
+-- No main target: sub returns nil.
+eq(PickSubTarget(nil), nil, "sub returns nil without a main target")
+
+-- Sub follows main: when the main target changes, the sub re-picks the nearest
+-- remaining objective and re-orders its member.
+Context.LostStamp = {}
+Context.SquadGroup = { s2 = 2 }
+Context.FieldUnits = { s2 = { unit = "y" } }
+BotApi.Scene.Flags = bastogne({ f5 = "a", f1 = "b", f3 = "b" })
+LabelFlags(); PartitionFlags()
+Context.Groups = {}
+Context.Groups[1] = { members = {}, size = 5, target = "f1", pending = 0 }
+Context.Groups[2] = { members = { s2 = true }, size = 3, target = "f1", pending = 0 }
+local subCaptured = {}
+local realCap2 = BotApi.Commands.CaptureFlag
+BotApi.Commands.CaptureFlag = function(_, squad, flag) subCaptured[squad] = flag end
+UpdateGroupTargets()
+eq(Context.Groups[2].target, "f3", "sub retargets to the other objective near main")
+eq(subCaptured.s2, "f3", "sub re-orders its member on retarget")
+BotApi.Commands.CaptureFlag = realCap2
+
 print("routing OK")
