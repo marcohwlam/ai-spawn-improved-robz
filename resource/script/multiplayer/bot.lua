@@ -20,6 +20,8 @@ Context = {
 	LastBackfillTime = 0, -- Elapsed() at last idle backfill
 	LastDefenderTime = 0, -- Elapsed() at last MG defender trickle
 	LastArtyTime = 0,     -- Elapsed() at last artillery defender trickle
+	LastDeepStrikeTime = 0, -- Elapsed() at last airborne deep-strike drop
+	AirborneSquads = {},    -- squadId -> true, elite airborne squads sent at enemy bases
 	LastOfficerTime = 0,  -- Elapsed() at last officer keep-alive
 	LastAtRifleTime = 0,  -- Elapsed() at last AT-rifle keep-alive
 	RatioCount = 0,    -- ratio (non-aux) units spawned since the last aux batch
@@ -75,6 +77,9 @@ local DefenderIntervalSec = 20   -- seconds between defender checks
 local DefenderCap      = 3       -- max live MG teams the bot keeps fielded
 local ArtyIntervalSec  = 45      -- seconds between artillery trickle checks (rarer than MG)
 local ArtyCap          = 1       -- max live artillery pieces the bot keeps fielded
+local DeepStrikePct        = 0.65   -- trigger deep-strike when enemy holds > this share of all flags
+local DeepStrikeIntervalSec = 180   -- seconds between airborne drops (frontline-equivalent of c(900) x 0.2)
+local DeepStrikeCap        = 2      -- max live airborne squads kept fielded
 -- Firing reach per artillery subtype, in flag_sectors.lua world units (reach = range x 10,
 -- see the 2026-06-29 placement design). Used to keep a piece on the REARMOST owned flag
 -- from which an enemy/contested target is already in range, so it never over-runs forward.
@@ -385,6 +390,25 @@ function LiveArtyCount()
 	return n
 end
 
+-- An airborne (paradrop) unit from the current faction roster, drawn by priority, or nil.
+function GetAirborneUnit()
+	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]
+	if not roster then return nil end
+	local drops = {}
+	for i, t in pairs(roster) do
+		if t.class == UnitClass.Airborne then table.insert(drops, t) end
+	end
+	if #drops == 0 then return nil end
+	return GetRandomItem(drops, function(t) return t.priority end)
+end
+
+-- Live airborne squads we have fielded (the deep-strike cap).
+function LiveAirborneCount()
+	local n = 0
+	for squadId in pairs(Context.AirborneSquads) do n = n + 1 end
+	return n
+end
+
 -- An officer unit from the current faction roster (parked at spawn for the cap), or nil.
 function GetOfficerUnit()
 	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]
@@ -689,6 +713,17 @@ function FlagDeficit()
 		if IsEnemyFlag(flag)    then enemy = enemy + 1 end
 	end
 	return enemy - captured
+end
+
+-- Share of all flags currently held by the enemy, in [0,1]. 0 when there are no flags.
+function EnemyFlagPct()
+	local enemy, total = 0, 0
+	for i, flag in pairs(BotApi.Scene.Flags) do
+		total = total + 1
+		if IsEnemyFlag(flag) then enemy = enemy + 1 end
+	end
+	if total == 0 then return 0 end
+	return enemy / total
 end
 
 -- Wave budget multiplier that scales with how badly we are losing on flags.
