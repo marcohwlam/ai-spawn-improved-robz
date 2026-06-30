@@ -60,6 +60,18 @@ LabelFlags(); PartitionFlags()
 eq(PickGroupTarget(nil), "f1", "tier3 picks the closer enemy flag")
 eq(Context.LastPickTier, 3, "f1 picked at tier 3")
 
+-- Tier 2 (CONTESTED frontier) beats tier 3 (ENEMY): post-renorm coverage for f7.
+-- f6 (axis=0.02, OWN for team a) held by team a makes f7 a frontier flag, because f6
+-- is in f7.nb ({"f1","f2","f4","f6"}). f7 (axis=0.56) is CONTESTED (0.4 <= 0.56 < 0.6)
+-- and falls in lateral band 1 (mine=true for playerId=1, teamSize=2). f10 (axis=1.00,
+-- ENEMY) is also enemy-held but has no mine+CONTESTED+frontier qualification -> tier 3.
+BotApi.Instance.playerId = 1
+Context.LostStamp = {}
+BotApi.Scene.Flags = bastogne({ f6 = "a", f7 = "b", f10 = "b" })
+LabelFlags(); PartitionFlags()
+eq(PickGroupTarget(nil), "f7", "tier2 CONTESTED frontier beats tier3 ENEMY")
+eq(Context.LastPickTier, 2, "f7 picked at tier 2")
+
 -- Untrusted partition own-all: playerId=3 outside 1..teamSize makes PartitionFlags set
 -- mine=true on every flag. Enemy holds f8 (CONTESTED, frontier via f5 in f8.nb), which
 -- qualifies for tier 2 under own-all. PickGroupTarget must return non-nil.
