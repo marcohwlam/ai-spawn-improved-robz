@@ -30,11 +30,12 @@ eq(CurrentPhase(479).name, "mid",   "479 mid")
 eq(CurrentPhase(480).name, "late",  "480 late")
 eq(CurrentPhase(99999).name, "late","late stays late")
 
--- DecideTier: empty field, all eligible -> rifle has the largest absolute deficit (weight 3)
+-- DecideTier: late's top composition weight is 2 (light and rifle tie after the rifle
+-- reduction). With light already partly on the field, rifle has the largest remaining deficit.
 local late = CurrentPhase(480)
-local empty = { heavy = 0, medium = 0, light = 0, rifle = 0, smg = 0, aux = 0 }
 local allOk = { heavy = true, medium = true, light = true, rifle = true, smg = true }
-eq(DecideTier(late, empty, false, allOk), "rifle", "empty field wants rifle first")
+local lightFilled = { heavy = 0, medium = 0, light = 1, rifle = 0, smg = 0, aux = 0 }
+eq(DecideTier(late, lightFilled, false, allOk), "rifle", "light partly filled -> rifle is top remaining deficit")
 
 -- DecideTier: rifle satisfied -> next deficit is light (weight 2)
 local f2 = { heavy = 0, medium = 0, light = 0, rifle = 4, smg = 0, aux = 0 }
