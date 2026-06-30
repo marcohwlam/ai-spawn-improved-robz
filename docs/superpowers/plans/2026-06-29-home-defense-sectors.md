@@ -201,16 +201,13 @@ assert rn["f3"][2] > 0.6 and rn["f4"][2] > 0.6, (rn["f3"], rn["f4"])
 assert all(0.0 <= rn[n][2] <= 1.0 for n in f)
 print("renorm synthetic OK")
 
-# crossed anchors -> SystemExit
-def _synthetic_crossed():
-    # a-base flag sits deeper into b than the b-base flag (homeA >= homeB)
-    bases = {"a1": (-100, 0), "b1": (100, 0)}
-    flags = {"fa": (90, 0), "fb": (-90, 0)}   # fa tagged a but near b, fb tagged b but near a
-    return bases, flags
-
+# crossed anchors -> SystemExit. adjacency() dedupe always assigns a-flags to
+# axis<0.5 and b-flags to axis>0.5, so the guard is only reachable by handing
+# renorm a crossed (comp, adj) directly: a-base axis 0.8 > b-base axis 0.2.
+_crossed_comp = {"fa": (0, 0, 0.8), "fb": (0, 0, 0.2)}
+_crossed_adj = {"fa": ([], ["a"]), "fb": ([], ["b"])}
 try:
-    b, f = _synthetic_crossed()
-    bs.renorm(bs.compute(b, f), bs.adjacency(b, f))
+    bs.renorm(_crossed_comp, _crossed_adj)
     raise AssertionError("expected SystemExit on crossed anchors")
 except SystemExit:
     pass
