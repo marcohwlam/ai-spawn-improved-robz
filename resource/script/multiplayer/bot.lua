@@ -509,9 +509,15 @@ function GetFieldCounts()
 	return c
 end
 
+-- Combat member count: aux (AT/MG/sniper/etc.) ride along with a group but do NOT fill
+-- its 5/3 cap, so only non-aux (ratio) members count toward "is the group full". Aux
+-- members are tracked in group.auxMembers and excluded here.
 function GroupMemberCount(group)
 	local n = 0
-	for _ in pairs(group.members) do n = n + 1 end
+	local aux = group.auxMembers
+	for sq in pairs(group.members) do
+		if not (aux and aux[sq]) then n = n + 1 end
+	end
 	return n
 end
 
@@ -581,13 +587,13 @@ end
 function ManageGroups()
 	if not Context.Groups[1] then
 		local t = PickGroupTarget(nil)
-		Context.Groups[1] = { members = {}, size = MainGroupSize, target = t, pending = 0,
+		Context.Groups[1] = { members = {}, auxMembers = {}, size = MainGroupSize, target = t, pending = 0,
 			phase = CurrentPhase(Elapsed()).name }
 		print("[AISPAWN] GROUP_NEW id=1 target=" .. tostring(t) .. PidTag())
 	elseif MaxGroups >= 2 and not Context.Groups[2]
 	   and GroupMemberCount(Context.Groups[1]) >= Context.Groups[1].size then
 		local t = PickSubTarget(Context.Groups[1].target)
-		Context.Groups[2] = { members = {}, size = SubGroupSize, target = t, pending = 0,
+		Context.Groups[2] = { members = {}, auxMembers = {}, size = SubGroupSize, target = t, pending = 0,
 			phase = CurrentPhase(Elapsed()).name }
 		print("[AISPAWN] GROUP_NEW id=2 target=" .. tostring(t) .. PidTag())
 	end
@@ -681,7 +687,7 @@ end
 function PruneGroups()
 	for i = 1, MaxGroups do
 		local g = Context.Groups[i]
-		if g and GroupMemberCount(g) == 0 then
+		if g and next(g.members) == nil then  -- raw emptiness: keep alive while ANY member (incl aux) lives
 			if (g.pending or 0) == 0 then
 				if g.seeded then print("[AISPAWN] GROUP_END id=" .. i .. PidTag()) end
 				Context.Groups[i] = nil
@@ -1383,9 +1389,12 @@ function AttemptSpawn(tag)
 			print("[AISPAWN] GROUP_UP id=" .. tostring(Context.FillGroup) .. " phase=" .. pname .. PidTag())
 		end
 		if ok then
-			g.pending = (g.pending or 0) + 1
+			-- Aux (TierOf == nil) rides along but does not fill the cap, so it does not
+			-- count as a pending combat slot either; only ratio units bump g.pending.
+			local isAux = (TierOf(unit) == nil)
+			if not isAux then g.pending = (g.pending or 0) + 1 end
 			Context.SpawnQueue[#Context.SpawnQueue + 1] =
-				{ kind = "group", info = unit, slot = Context.FillGroup }
+				{ kind = "group", info = unit, slot = Context.FillGroup, aux = isAux }
 		end
 		-- size reflects committed fills (live members + pending), since the member for THIS
 		-- spawn lands a quant later via OnGameSpawn.
@@ -1624,9 +1633,10 @@ function OnGameQuant()
 					print("[AISPAWN] ATRIFLE try=" .. tostring(atr.unit)
 						.. " ok=" .. tostring(ok) .. " group=" .. tostring(slot))
 					if ok then
-						g.pending = (g.pending or 0) + 1
+						-- AT rifle is aux: rides along to escort the platoon but does not fill
+						-- the group cap, so it is not a pending combat slot.
 						Context.SpawnQueue[#Context.SpawnQueue + 1] =
-							{ kind = "group", info = atr, slot = slot }
+							{ kind = "group", info = atr, slot = slot, aux = true }
 					else
 						Context.FailCooldown[atr.unit] = Elapsed()
 					end
@@ -1641,7 +1651,10 @@ function OnGameQuant()
 	for squadId in pairs(Context.FieldUnits) do
 		if not BotApi.Scene:IsSquadExists(squadId) then
 			local gi = Context.SquadGroup[squadId]
-			if gi and Context.Groups[gi] then Context.Groups[gi].members[squadId] = nil end
+			if gi and Context.Groups[gi] then
+				Context.Groups[gi].members[squadId] = nil
+				if Context.Groups[gi].auxMembers then Context.Groups[gi].auxMembers[squadId] = nil end
+			end
 			Context.SquadGroup[squadId] = nil
 			Context.FieldUnits[squadId] = nil
 			Context.Cappers[squadId] = nil
@@ -1824,8 +1837,15 @@ function OnGameSpawn(args)
 		local g = Context.Groups[d.slot]
 		g.members[args.squadId] = true
 		g.seeded = true
-		g.pending = math.max(0, (g.pending or 0) - 1)
 		Context.SquadGroup[args.squadId] = d.slot
+		-- Aux members ride along (follow the group target) but do not occupy a combat slot,
+		-- so they are tracked separately and never decrement the combat pending count.
+		if d.aux then
+			g.auxMembers = g.auxMembers or {}
+			g.auxMembers[args.squadId] = true
+		else
+			g.pending = math.max(0, (g.pending or 0) - 1)
+		end
 	elseif d and d.kind == "airborne" then
 		Context.AirborneSquads[args.squadId] = true
 	end
