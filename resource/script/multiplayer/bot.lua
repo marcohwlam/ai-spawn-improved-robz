@@ -213,6 +213,21 @@ function DefenderFlagPriority(flag)
 	end
 end
 
+-- Artillery defenders weight OWNED flags by forwardness, scaled to the piece's reach.
+-- axis is team-oriented: low = own/rear, high = enemy/forward. Short rockets must sit
+-- on the frontmost owned flag to reach the contested center; heavy artillery reaches
+-- from the rear, so it favors a safer rear owned flag. Non-owned flags get only a
+-- small drift weight so a piece with no owned flag in reach still moves forward.
+function ArtilleryFlagPriority(flag, entry)
+	if not IsCapturedFlag(flag) then return 0.05 end
+	local label = Context.FlagLabel[flag.name]
+	local axis = (label and label.axis) or 0.5
+	local sub = entry and entry.arty
+	if sub == "rocket" then return 0.1 + 3.0 * axis
+	elseif sub == "heavy" then return 0.1 + 3.0 * (1 - axis)
+	else return 0.1 + 1.0 * axis end          -- field (and any untagged artillery): mild forward
+end
+
 function IsDefender(squad)
 	local entry = Context.FieldUnits[squad]
 	return entry ~= nil and DefenderClasses[entry.class] == true
@@ -1476,9 +1491,15 @@ function CaptureFlag(squad)
 		if flag then BotApi.Commands:CaptureFlag(squad, flag.name) end
 		return
 	end
-	-- Defenders (MG, AT, sniper, etc.) hold owned flags.
+	-- Defenders (MG, AT, sniper, etc.) hold owned flags. Artillery uses a range-aware
+	-- priority so each piece sits where its reach covers the contested center.
 	if IsDefender(squad) then
-		local flag = GetFlagToCapture(BotApi.Scene.Flags, DefenderFlagPriority)
+		local entry = Context.FieldUnits[squad]
+		local priFn = DefenderFlagPriority
+		if entry and entry.class == UnitClass.ArtilleryTank then
+			priFn = function(flag) return ArtilleryFlagPriority(flag, entry) end
+		end
+		local flag = GetFlagToCapture(BotApi.Scene.Flags, priFn)
 		if flag then BotApi.Commands:CaptureFlag(squad, flag.name) end
 		return
 	end
