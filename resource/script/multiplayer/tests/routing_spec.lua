@@ -183,4 +183,32 @@ eq(ArmorTargetCount({ targets = { heavy = 1, medium = 1, light = 2, rifle = 2, s
 eq(ArmorTargetCount({ targets = { medium = 1, light = 2, rifle = 2, smg = 1 } }), 1,
 	"mid armor target count is 1")
 
+-- === TrackLostFlags: own->neutral stamps LostStamp (react before full enemy capture) ===
+-- A flag owned last tick that drops to neutral (enemy mid-capture) must be stamped now,
+-- not only when the enemy fully owns it. The stamp makes FlagTier treat the own-sector
+-- flag as tier 1 immediately.
+BotApi.Instance.team = "a"; BotApi.Instance.enemyTeam = "b"
+Context.GameClock = 200
+Context.LostStamp = {}
+Context.PrevOwned = {}
+
+-- Tick 1: f6 is ours -> no stamp, recorded as previously owned.
+BotApi.Scene.Flags = bastogne({ f6 = "a" })
+TrackLostFlags()
+eq(Context.LostStamp["f6"], nil, "TrackLostFlags: still-owned flag is not stamped")
+eq(Context.PrevOwned["f6"], true, "TrackLostFlags: owned flag recorded as previously owned")
+
+-- Tick 2: f6 drops to neutral (occupant 0) -> stamped at the current clock.
+BotApi.Scene.Flags = bastogne({})
+TrackLostFlags()
+eq(Context.LostStamp["f6"], 200, "TrackLostFlags: own->neutral stamps LostStamp now")
+
+-- A flag never owned (f2 stayed neutral both ticks) is not stamped.
+eq(Context.LostStamp["f2"], nil, "TrackLostFlags: never-owned neutral flag is not stamped")
+
+-- End to end: the freshly-stamped neutral own flag is a tier 1 target.
+LabelFlags(); PartitionFlags()
+eq(FlagTier("f6"), 1, "own->neutral flag escalates to tier 1 before enemy capture")
+eq(PickGroupTarget(nil), "f6", "group retakes the own flag being captured")
+
 print("routing OK")
