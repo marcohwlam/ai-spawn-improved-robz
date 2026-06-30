@@ -30,6 +30,14 @@ eq(CurrentPhase(479).name, "mid",   "479 mid")
 eq(CurrentPhase(480).name, "late",  "480 late")
 eq(CurrentPhase(99999).name, "late","late stays late")
 
+-- Per-phase group sizes (main prong / sub prong scale up through the game).
+eq(CurrentPhase(0).mainGroup,   3, "early main 3")
+eq(CurrentPhase(0).subGroup,    2, "early sub 2")
+eq(CurrentPhase(180).mainGroup, 4, "mid main 4")
+eq(CurrentPhase(180).subGroup,  3, "mid sub 3")
+eq(CurrentPhase(480).mainGroup, 5, "late main 5")
+eq(CurrentPhase(480).subGroup,  3, "late sub 3")
+
 -- DecideTier: late composition is light-dominant (heavy 1, medium 1, light 3, rifle 1,
 -- smg 1; totalT 7 -> light share 3/7, every other tier 1/7).
 local late = CurrentPhase(480)

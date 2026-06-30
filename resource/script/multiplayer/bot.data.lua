@@ -27,9 +27,9 @@ UnitClass = {
 -- of dribbling cheap ones to die. `squadCap` is the per-phase live-squad ceiling
 -- (grows +2 per phase as the army gets pricier).
 Phases = {
-	{ name = "early", upto = 180,        targets = {                       light = 1, rifle = 3, smg = 1 }, budget = 14, waveMult = 1.0,  squadCap = 24 },
-	{ name = "mid",   upto = 480,        targets = {            medium = 1, light = 3, rifle = 1, smg = 1 }, budget = 22, waveMult = 1.5,  squadCap = 26 },
-	{ name = "late",  upto = 1000000000, targets = { heavy = 1, medium = 1, light = 3, rifle = 1, smg = 1 }, budget = 32, waveMult = 2.25, squadCap = 28 },
+	{ name = "early", upto = 180,        targets = {                       light = 1, rifle = 3, smg = 1 }, budget = 14, waveMult = 1.0,  squadCap = 24, mainGroup = 3, subGroup = 2 },
+	{ name = "mid",   upto = 480,        targets = {            medium = 1, light = 3, rifle = 1, smg = 1 }, budget = 22, waveMult = 1.5,  squadCap = 26, mainGroup = 4, subGroup = 3 },
+	{ name = "late",  upto = 1000000000, targets = { heavy = 1, medium = 1, light = 3, rifle = 1, smg = 1 }, budget = 32, waveMult = 2.25, squadCap = 28, mainGroup = 5, subGroup = 3 },
 }
 
 -- Per-faction phase boundaries (seconds), anchored to real RobZ unlock times.
