@@ -138,3 +138,12 @@ eq(jap[3].targets.medium, 2,   "jap late medium boosted to 2")
 -- unknown faction -> global Phases table (identity fallback).
 assert(ResolvePhases("nonexistent") == Phases, "unknown army returns the global Phases table")
 print("ResolvePhases OK")
+
+-- CurrentPhase reads Context.Phases when set, falls back to global Phases when nil.
+Context.Phases = ResolvePhases("jap")
+eq(CurrentPhase(500).name,  "early", "jap 500 is early (< 580)")
+eq(CurrentPhase(600).name,  "mid",   "jap 600 is mid (>= 580, < 1380)")
+eq(CurrentPhase(1400).name, "late",  "jap 1400 is late (>= 1380)")
+Context.Phases = nil
+eq(CurrentPhase(180).name, "mid", "fallback to global Phases when Context.Phases is nil")
+print("CurrentPhase faction OK")

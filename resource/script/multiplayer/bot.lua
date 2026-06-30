@@ -569,10 +569,11 @@ end
 
 -- Pick the active phase for an elapsed time in seconds.
 function CurrentPhase(elapsedSec)
-	for i = 1, #Phases do
-		if elapsedSec < Phases[i].upto then return Phases[i] end
+	local phases = Context.Phases or Phases
+	for i = 1, #phases do
+		if elapsedSec < phases[i].upto then return phases[i] end
 	end
-	return Phases[#Phases]
+	return phases[#phases]
 end
 
 -- Choose the tier whose share is furthest below its target, among phase-allowed tiers
@@ -1074,6 +1075,7 @@ function OnGameStart()
 	math.randomseed(os.time() * BotApi.Instance.hostId)
 	math.random() math.random() math.random()
 	Context.Purchase = PIter:new(Purchases)
+	Context.Phases = ResolvePhases(BotApi.Instance.army)
 	Context.LastWaveTime = 0
 	Context.MatchQuants = 0
 	Context.StartTime = os.time()
