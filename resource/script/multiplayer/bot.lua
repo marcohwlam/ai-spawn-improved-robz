@@ -436,6 +436,56 @@ end
 -- Tag for per-bot attribution in shared game.log (multiple AI bots print to one file).
 function PidTag() return " pid=" .. tostring(BotApi.Instance.playerId) end
 
+-- Sum of live group sizes: the standing-army size the ratio targets are scaled to.
+function TotalGroupCapacity()
+	local n = 0
+	for i = 1, MaxGroups do
+		local g = Context.Groups[i]
+		if g then n = n + g.size end
+	end
+	return n
+end
+
+-- How many armor units the standing army should hold for this phase, scaled from
+-- the phase's armor share to the total group capacity.
+function ArmorTargetCount(phase)
+	local armorTotal = (phase.targets.heavy or 0) + (phase.targets.medium or 0)
+	local cap = TotalGroupCapacity()
+	if cap == 0 then return 0 end
+	return math.floor(armorTotal / CycleSize(phase) * cap + 0.5)
+end
+
+-- Distribute the phase's armor quota (heavy + medium target weights) across the live
+-- groups by the largest-remainder method on group size, writing g.armorLead. Each
+-- prong receives armor support rather than the main group taking all of it.
+function ApportionArmor(phase)
+	local armorTotal = (phase.targets.heavy or 0) + (phase.targets.medium or 0)
+	local groups, cap = {}, 0
+	for i = 1, MaxGroups do
+		local g = Context.Groups[i]
+		if g then groups[#groups + 1] = g; cap = cap + g.size end
+	end
+	if cap == 0 then return end
+	local fracs, assigned = {}, 0
+	for idx = 1, #groups do
+		local exact = armorTotal * groups[idx].size / cap
+		local f = math.floor(exact)
+		groups[idx].armorLead = f
+		fracs[idx] = exact - f
+		assigned = assigned + f
+	end
+	local remainder = armorTotal - assigned
+	while remainder > 0 do
+		local bestIdx, bestFrac = nil, -1
+		for idx = 1, #groups do
+			if fracs[idx] > bestFrac then bestFrac = fracs[idx]; bestIdx = idx end
+		end
+		groups[bestIdx].armorLead = groups[bestIdx].armorLead + 1
+		fracs[bestIdx] = -1
+		remainder = remainder - 1
+	end
+end
+
 -- Create groups: the 1st whenever none exist; the 2nd only once the 1st is full.
 function ManageGroups()
 	if not Context.Groups[1] then
@@ -744,9 +794,9 @@ function GetUnitToSpawn(units)
 	end
 	if #pool == 0 then return nil end
 
-	-- Aux is separate from the four-tier ratio; it is injected on a fixed cycle.
-	local field
-	if g then field = CountByTier(g) else field = GetFieldCounts() end
+	-- Army-wide composition: the tier ratio is enforced across the whole force, not
+	-- per group, so splitting the force into prongs does not skew the ratio.
+	local field = GetFieldCounts()
 	local function collectAux()
 		local out = {}
 		for i, t in pairs(pool) do
@@ -783,15 +833,21 @@ function GetUnitToSpawn(units)
 		return t.priority * mul
 	end
 
-	-- Armor lead: at the wave's start, spawn the heaviest available armor tier first.
-	if Context.ArmorLead > 0 then
-		local lead = nil
-		if #byTier.heavy > 0 then lead = "heavy"
-		elseif #byTier.medium > 0 then lead = "medium" end
-		if lead then
-			return GetRandomItem(byTier[lead], weightOf)
+	-- Per-group armor lead, gated by the army-wide armor deficit. Front-loading leads
+	-- with armor at the wave start but stops once the army meets its armor target, so
+	-- surviving tanks across waves no longer crowd out infantry refills.
+	if g and (g.armorLead or 0) > 0 then
+		if (field.heavy + field.medium) < ArmorTargetCount(phase) then
+			local lead = nil
+			if #byTier.heavy > 0 then lead = "heavy"
+			elseif #byTier.medium > 0 then lead = "medium" end
+			if lead then
+				return GetRandomItem(byTier[lead], weightOf)
+			else
+				g.armorLead = 0 -- no armor available; resume normal selection
+			end
 		else
-			Context.ArmorLead = 0 -- no armor available; resume normal selection
+			g.armorLead = 0 -- armor already at target; resume normal selection
 		end
 	end
 
@@ -1244,8 +1300,8 @@ function AttemptSpawn(tag)
 			if Context.AuxOwed > 0 then Context.AuxOwed = Context.AuxOwed - 1 end
 		else
 			local utier = TierOf(unit)
-			if Context.ArmorLead > 0 and (utier == "heavy" or utier == "medium") then
-				Context.ArmorLead = Context.ArmorLead - 1
+			if g and (g.armorLead or 0) > 0 and (utier == "heavy" or utier == "medium") then
+				g.armorLead = g.armorLead - 1
 			end
 			Context.RatioCount = Context.RatioCount + 1
 			local phase = CurrentPhase(Elapsed())
@@ -1284,9 +1340,10 @@ function OnGameQuant()
 		Context.WaveRemaining = budget
 		Context.WaveFails = 0
 		Context.WaveCooldown = 0
-		-- Front-load the phase's armor quota (heaviest first) before the ratio picker.
-		Context.ArmorLead = (phase.targets.heavy or 0) + (phase.targets.medium or 0)
+		-- Build/refresh the groups, then split the phase's armor quota across them so
+		-- each prong leads with armor (front-load is gated by the army-wide deficit).
 		ManageGroups()
+		ApportionArmor(phase)
 		local ng = 0
 		for i = 1, MaxGroups do if Context.Groups[i] then ng = ng + 1 end end
 		print("[AISPAWN] WAVE mq=" .. tostring(Context.MatchQuants)

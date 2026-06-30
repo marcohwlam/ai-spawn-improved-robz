@@ -158,4 +158,29 @@ eq(Context.Groups[2].target, "f3", "sub retargets to the other objective near ma
 eq(subCaptured.s2, "f3", "sub re-orders its member on retarget")
 BotApi.Commands.CaptureFlag = realCap2
 
+-- === Task 3: ApportionArmor and ArmorTargetCount ===
+
+Context.Groups = { [1] = { members = {}, size = 5 }, [2] = { members = {}, size = 3 } }
+
+-- Late composition: armorTotal = heavy1 + medium1 = 2, split 5/3 -> main 1, sub 1.
+ApportionArmor({ targets = { heavy = 1, medium = 1, light = 2, rifle = 2, smg = 1 } })
+eq(Context.Groups[1].armorLead, 1, "late armor: main gets 1")
+eq(Context.Groups[2].armorLead, 1, "late armor: sub gets 1")
+
+-- Mid composition: armorTotal = 1 -> main 1, sub 0 (largest remainder gives the unit to main).
+ApportionArmor({ targets = { medium = 1, light = 2, rifle = 2, smg = 1 } })
+eq(Context.Groups[1].armorLead, 1, "mid armor: main gets 1")
+eq(Context.Groups[2].armorLead, 0, "mid armor: sub gets 0")
+
+-- Early composition: no armor target -> both 0.
+ApportionArmor({ targets = { light = 1, rifle = 3, smg = 1 } })
+eq(Context.Groups[1].armorLead, 0, "early: main armorLead 0")
+eq(Context.Groups[2].armorLead, 0, "early: sub armorLead 0")
+
+-- ArmorTargetCount rounds armorTotal / CycleSize * totalGroupCapacity (capacity 8 here).
+eq(ArmorTargetCount({ targets = { heavy = 1, medium = 1, light = 2, rifle = 2, smg = 1 } }), 2,
+	"late armor target count is 2")
+eq(ArmorTargetCount({ targets = { medium = 1, light = 2, rifle = 2, smg = 1 } }), 1,
+	"mid armor target count is 1")
+
 print("routing OK")
