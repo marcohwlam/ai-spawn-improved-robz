@@ -1,0 +1,28 @@
+{from "pattern gun"		; "m4a3_105"
+	{filling "bullet105 us"}
+	{fireSound "gun/howitzer/105mm_m2a1"}
+	("range_grazing_howitzer")
+	
+	("speed_all" ap(472) apcr(472) fg(472) heat(381))
+	("caliber_maximum")
+	{range 190 190}
+	{projectileDamage 150}
+	{parameters "heat"
+		("damage_heat" a(115)  range(190))
+	}
+	
+	("accuracy_grazinghowitzer_high_anti_far")
+	{RelaxationTime 0.0001}
+	
+	(mod "mp"
+		{tag "prepare"}
+		{Special
+			{Mode aim}
+			{PrepareTime 0}
+			{PrepareCursor "cannon_shot"}
+		}
+	)
+}
+
+
+

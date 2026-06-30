@@ -1,0 +1,24 @@
+{from "pattern gun"     ; "su-122"
+	{filling "bullet122 rus"}
+	{fireSound "gun/howitzer/122mm_d25"}
+	{reloadSound "tankgun_r04"}
+	("range_grazing_howitzer")
+	{parameters "heat"
+        	("damage_heat" a(120) range(200))
+	}
+	{speed 515}
+	{range 200 200}
+	{rechargeTime 18}
+	("caliber_maximum")
+	("accuracy_grazinghowitzer_high_200m_anti_far")
+	{RelaxationTime 0.0001}
+	
+	(mod "mp"
+		{tag "prepare"}
+		{Special
+			{Mode aim}
+			{PrepareTime 0}
+			{PrepareCursor "cannon_shot"}
+		}
+	)
+}
