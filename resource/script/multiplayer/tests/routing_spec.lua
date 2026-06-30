@@ -37,13 +37,14 @@ BotApi.Scene.Flags = bastogne({})
 LabelFlags(); PartitionFlags()
 eq(PickGroupTarget(nil), nil, "no enemy and no recently-lost -> nil")
 
--- After two-point renorm (task-4 plan), f1 axis=0.63 is ENEMY for team a (not CONTESTED).
--- Both f1 and f10 are ENEMY; f1 wins tier 3 because it is closer to our front than f10.
+-- Base-tag model (revised spec 2026-06-29): f1 has no base tag -> CONTESTED (not ENEMY).
+-- f8 (held by a) is in f1.nb, so f1 is frontier; f1 mine=true (shared band) -> tier 2.
+-- f10 (base={"b"}) is ENEMY for team a -> tier 3. Tier 2 beats tier 3, f1 still wins.
 Context.LostStamp = {}
 BotApi.Scene.Flags = bastogne({ f8 = "a", f1 = "b", f10 = "b" })
 LabelFlags(); PartitionFlags()
 eq(PickGroupTarget(nil), "f1", "f1 (closer enemy) beats f10 (deeper enemy)")
-eq(Context.LastPickTier, 3, "f1 picked at tier 3")
+eq(Context.LastPickTier, 2, "f1 picked at tier 2 (CONTESTED frontier; base-tag spec)")
 
 -- Never-nil: a single deep enemy flag with no frontier still returns it (tier 3).
 Context.LostStamp = {}
