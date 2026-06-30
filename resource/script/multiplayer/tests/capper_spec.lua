@@ -41,4 +41,16 @@ Context.FlagOwner = {}
 eq(CapperFlagPriority(flag("u1", 0)), 5.0, "unknown map: neutral still 5.0")
 eq(CapperFlagPriority(flag("u2", "b")), 1.0, "unknown map: enemy-held still 1.0")
 
+-- GetCapperUnit: a single-soldier riflemans2(<army>) for a known faction.
+Purchases = { { Units = { usa = { { unit = "riflemans(usa)", class = UnitClass.Infantry, line = true } } } } }
+BotApi.Instance.army = "usa"
+local cu = GetCapperUnit()
+eq(cu.unit, "riflemans2(usa)", "capper unit is the single-man riflemans2 for the army")
+eq(cu.class, UnitClass.Infantry, "capper unit is infantry")
+
+-- Unknown faction (no roster): falls back to a line squad rather than an unverified name.
+BotApi.Instance.army = "no_such_army"
+local fb = GetCapperUnit()
+eq(fb, nil, "unknown army with no line roster falls back (nil here, no usable line unit)")
+
 print("capper OK")

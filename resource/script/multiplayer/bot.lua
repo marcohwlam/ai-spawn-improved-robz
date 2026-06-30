@@ -50,7 +50,7 @@ local WaveSpawnSpacing = 7      -- quants between spawns inside a wave (~0.1s)
 local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spent, end wave
 
 -- Neutral-flag capper trickle: every NeutralInterval quants, if any flag is
--- neutral, spawn one cheap line-infantry squad ordered to grab a neutral flag.
+-- neutral, spawn one cheap single soldier ordered to grab a neutral flag.
 local NeutralIntervalSec  = 12   -- seconds between capper checks (longer cooldown: cappers trickle, not stream)
 local CapperCap       = 2       -- max live single-soldier cappers (prevents stacking)
 -- Cappers re-pick their target far faster than the standard 3-minute rotation so a capper
@@ -280,6 +280,17 @@ function GetLineUnit()
 	end
 	if #lines == 0 then return nil end
 	return GetRandomItem(lines, function(t) return t.priority end)
+end
+
+-- The capper unit: a single soldier, not a full squad. RobZ exposes a one-man rifleman
+-- as "riflemans2(<army>)" for every faction the bot fields, so a capper is one body that
+-- grabs an undefended flag without burning a whole squad's manpower. Falls back to a line
+-- squad only on an unknown faction (no roster), where the single-man name is unverified.
+function GetCapperUnit()
+	local army = BotApi.Instance.army
+	local roster = Purchases[1] and Purchases[1].Units[army]
+	if not roster then return GetLineUnit() end
+	return { class = UnitClass.Infantry, unit = "riflemans2(" .. army .. ")", line = true, inf = "rifle" }
 end
 
 -- The defender MG: use the cheapest MG only (the basic mgs2 team). Falls back to any
@@ -1429,9 +1440,9 @@ function OnGameQuant()
 	if Elapsed() - Context.LastNeutralTime >= NeutralIntervalSec then
 		Context.LastNeutralTime = Elapsed()
 		if CountNeutralFlags() > 0 and LiveCapperCount() < CapperCap then
-			local line = GetLineUnit()
+			local line = GetCapperUnit()
 			if line then
-				local ok = BotApi.Commands:Spawn(line.unit, 1) -- single soldier, not a full squad
+				local ok = BotApi.Commands:Spawn(line.unit, 1) -- single-soldier capper entity (riflemans2)
 				print("[AISPAWN] CAPPER try=" .. tostring(line.unit)
 					.. " ok=" .. tostring(ok))
 				if ok then
