@@ -86,8 +86,9 @@ trickles on its own cooldown independent of the wave economy.
                           +------------------(NEW airborne branch)----------------+
                           |  before the group / capper / defender branches        |
                           |  name = DeepStrikeTarget()                             |
-                          |     -> enemy-HELD sector=="ENEMY" flag nearest our     |
-                          |        territory (else none left? main group target)   |
+                          |     -> FURTHEST enemy-HELD sector=="ENEMY" flag        |
+                          |        (deepest in enemy territory; chain inward)      |
+                          |     -> none left? Context.Groups[1].target (main)      |
                           |  if name and FlagAttackable(name): CaptureFlag         |
                           +-------------------------------------------------------+
 ```
@@ -105,12 +106,12 @@ trickles on its own cooldown independent of the wave economy.
                                                                            v
    each OrderRotationPeriod:  CaptureFlag(squad) --> DeepStrikeTarget():
         scan Scene.Flags: IsEnemyFlag(flag) AND FlagLabel[name].sector == "ENEMY"
-           -> rank by distance to our NEAREST owned flag (the same metric tier-3 of
-              PickGroupTarget uses); if we own no flag, rank by axis ascending
-              (closest-to-us enemy base first). No squad position API exists, so the
-              target is anchored to our territory, not the individual squad.
+           -> pick the FURTHEST one: max axis (team-oriented, high = enemy/forward =
+              deepest in enemy territory); tiebreak by greater distance to our nearest
+              owned flag. This sends paratroopers to the enemy's deep rear, not the
+              near bases the ground groups already pressure.
            -> chain: as each enemy base falls it stops being enemy-held, so the next
-              call naturally returns the next-nearest enemy base
+              call returns the next-furthest enemy base, rolling up inward
         no enemy-held ENEMY flag remains:
            -> return Context.Groups[1] and Context.Groups[1].target  (main group target)
         target nil or not FlagAttackable: issue no order this tick (retry next rotation)
@@ -132,9 +133,10 @@ New functions:
   rows where `class == UnitClass.Airborne`, return one by priority, or nil.
 - `LiveAirborneCount()` -- count `Context.AirborneSquads` entries (the cap).
 - `EnemyFlagPct()` -- `enemy / total` over `BotApi.Scene.Flags`; 0 when no flags.
-- `DeepStrikeTarget()` -- enemy-held `sector == "ENEMY"` flag ranked by distance
-  to our nearest owned flag (axis ascending when we own none); when no enemy base
-  remains, `Context.Groups[1]` target; else nil. No per-squad position is read.
+- `DeepStrikeTarget()` -- the FURTHEST enemy-held `sector == "ENEMY"` flag (max
+  team-axis, tiebreak by greater distance to our nearest owned flag); when no
+  enemy base remains, `Context.Groups[1]` target; else nil. No per-squad position
+  is read -- depth is measured by the flag's own axis.
 - `DeepStrikeTrickle()` -- the gated spawn block; called from `OnGameQuant`.
 
 Touch points in existing code:
@@ -156,8 +158,9 @@ New `tests/airborne_spec.lua` (mirrors `arty_spec.lua` / `capper_spec.lua`):
    the roster has no airborne.
 3. `LiveAirborneCount` -- counts only `AirborneSquads` entries.
 4. `DeepStrikeTarget` -- with two enemy `sector=="ENEMY"` flags returns the
-   nearest; after the nearest is owned, returns the next; with no enemy base left
-   returns `Context.Groups[1].target`; nil when neither exists.
+   FURTHEST (higher axis); after the furthest is owned, returns the next-furthest;
+   with no enemy base left returns `Context.Groups[1].target`; nil when neither
+   exists.
 5. `CaptureFlag` airborne routing -- a registered airborne squad is ordered to
    its DeepStrikeTarget; falls back to the main group target; issues no order
    when the target is nil / not attackable.
