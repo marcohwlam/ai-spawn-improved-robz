@@ -30,24 +30,27 @@ eq(CurrentPhase(479).name, "mid",   "479 mid")
 eq(CurrentPhase(480).name, "late",  "480 late")
 eq(CurrentPhase(99999).name, "late","late stays late")
 
--- DecideTier: late's top composition weight is 2 (light and rifle tie after the rifle
--- reduction). With light already partly on the field, rifle has the largest remaining deficit.
+-- DecideTier: late composition is light-dominant (heavy 1, medium 1, light 3, rifle 1,
+-- smg 1; totalT 7 -> light share 3/7, every other tier 1/7).
 local late = CurrentPhase(480)
 local allOk = { heavy = true, medium = true, light = true, rifle = true, smg = true }
-local lightFilled = { heavy = 0, medium = 0, light = 1, rifle = 0, smg = 0, aux = 0 }
-eq(DecideTier(late, lightFilled, false, allOk), "rifle", "light partly filled -> rifle is top remaining deficit")
 
--- DecideTier: rifle satisfied -> next deficit is light (weight 2)
-local f2 = { heavy = 0, medium = 0, light = 0, rifle = 4, smg = 0, aux = 0 }
-eq(DecideTier(late, f2, false, allOk), "light", "after rifle, light")
+-- Empty field: light has the largest target share -> picked first.
+local empty = { heavy = 0, medium = 0, light = 0, rifle = 0, smg = 0, aux = 0 }
+eq(DecideTier(late, empty, false, allOk), "light", "light dominates an empty field")
 
--- DecideTier: only rifle eligible (tanks on cooldown) -> rifle
-eq(DecideTier(late, f2, false, { rifle = true }), "rifle", "fallback to eligible tier")
+-- Only rifle eligible (tanks on cooldown) -> rifle fallback.
+eq(DecideTier(late, empty, false, { rifle = true }), "rifle", "fallback to eligible tier")
 
--- DecideTier: enemy tanks bumps medium/heavy deficit
-local f3 = { heavy = 1, medium = 1, light = 2, rifle = 4, smg = 0, aux = 0 }
-local pick = DecideTier(late, f3, true, allOk)
+-- Light already filled + enemy tanks: the medium/heavy bump (+0.15) wins over the now-
+-- satisfied light, leaning armor.
+local lightFilled = { heavy = 0, medium = 0, light = 3, rifle = 0, smg = 0, aux = 0 }
+local pick = DecideTier(late, lightFilled, true, allOk)
 assert(pick == "medium" or pick == "heavy", "enemy tanks leans armor, got " .. tostring(pick))
+
+-- Light already filled + losing: smg weight is bumped to 2 (> every non-light tier),
+-- so smg has the largest remaining deficit.
+eq(DecideTier(late, lightFilled, false, allOk, true), "smg", "losing smg bump picks smg")
 
 -- DecideTier: smg under-filled -> picks smg over rifle and light
 -- Use light=1 so smg is strictly more under-filled (avoids tie with light).
