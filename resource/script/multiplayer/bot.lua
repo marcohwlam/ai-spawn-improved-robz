@@ -51,8 +51,11 @@ local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spen
 
 -- Neutral-flag capper trickle: every NeutralInterval quants, if any flag is
 -- neutral, spawn one cheap line-infantry squad ordered to grab a neutral flag.
-local NeutralIntervalSec  = 5    -- seconds between capper checks
+local NeutralIntervalSec  = 12   -- seconds between capper checks (longer cooldown: cappers trickle, not stream)
 local CapperCap       = 2       -- max live single-soldier cappers (prevents stacking)
+-- Cappers re-pick their target far faster than the standard 3-minute rotation so a capper
+-- rolls on to the next neutral flag right after taking one, instead of idling on it.
+local CapperRotationPeriod = 15 * 1000 -- ms between capper target re-picks
 
 -- When a Spawn fails (usually the picked unit is unaffordable right now), bench
 -- that unit for FailCooldownSec seconds so the picker falls through to a cheaper tier
@@ -242,12 +245,20 @@ function GetFlagToCapture(flagPoints, getPriority)
 	return GetRandomItem(flags, function(f) return f.k end)
 end
 
--- Cappers strongly prefer neutral flags (cheap units claiming uncontested ground)
--- but still drift to enemy/own flags so they never idle once the map is decided.
+-- Cappers grab uncontested ground inside this bot's own lane: neutral flags first,
+-- then in-lane enemy-held flags. Two hard exclusions (weight 0 = never picked):
+--   * the enemy home sector -- cheap single units must not walk into the enemy base.
+--   * a teammate's partition -- each bot's cappers stay in their own sector.
+-- A flag we already own also returns 0 so a capper moves on to the next target after
+-- a capture instead of sitting on the flag it just took.
 function CapperFlagPriority(flag)
+	local label = Context.FlagLabel[flag.name]
+	if label and label.sector == "ENEMY" then return 0 end
+	local owner = Context.FlagOwner[flag.name]
+	if owner and not owner.mine then return 0 end
 	if     IsNeutralFlag(flag)  then return 5.0
 	elseif IsEnemyFlag(flag)    then return 1.0
-	else                             return 0.5
+	else                             return 0
 	end
 end
 
@@ -1667,10 +1678,12 @@ function OnGameSpawn(args)
 		Context.SquadGroup[args.squadId] = d.slot
 	end
 	-- Officers stay parked at the spawn (they hold the unit cap); everyone else gets a
-	-- capture order.
+	-- capture order. Cappers rotate fast so they advance to the next flag after capping;
+	-- everyone else uses the slow standard rotation.
 	local entry = Context.FieldUnits[args.squadId]
 	if not (entry and entry.class == UnitClass.Officer) then
-		SetSquadOrder(CaptureFlag, args.squadId, OrderRotationPeriod)
+		local period = Context.Cappers[args.squadId] and CapperRotationPeriod or OrderRotationPeriod
+		SetSquadOrder(CaptureFlag, args.squadId, period)
 	end
 end
 
