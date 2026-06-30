@@ -78,15 +78,23 @@ Conclusions:
 +--------------------------------------------+-------------------------------------------------------+
                                              |
         +------------------- A: SPAWN -------+---------+          +------------ B: PLACEMENT -----------+
-        | GetUnitToSpawn: third injection path        |  spawn   | CaptureFlag defender branch          |
-        |   ArtilleryTank -> collectArty (split from  | -------> |   if class == ArtilleryTank:         |
-        |   the aux pool)                             | standard |     priFn = closure over entry ->    |
-        |   ArtyOwed counter, ArtyEveryCycles = 2     | spawn    |     ArtilleryFlagPriority(flag,entry) |
-        |   per-group cap = 1, mid + late phases only | filter   |   rocket -> frontmost owned flag      |
-        |   standalone (not seeded into attack Group) |          |   heavy  -> rear/safe owned flag      |
-        |   -> reaches the defender branch            |          |   field  -> mild forward owned flag   |
+        | Artillery defender TRICKLE (mirrors the MG   |  spawn   | CaptureFlag defender branch          |
+        | defender trickle in the idle-between-waves   | -------> |   if class == ArtilleryTank:         |
+        | window):                                     | as a     |     priFn = closure over entry ->    |
+        |   GetArtyUnit() weighted by priority         | "trickle"|     ArtilleryFlagPriority(flag,entry) |
+        |   gate: ArtyIntervalSec=45, LiveArtyCount()  | (NOT a   |   rocket -> frontmost owned flag      |
+        |   < ArtyCap=1, HeldFlagCount()>0, mid+late    | group    |   heavy  -> rear/safe owned flag      |
+        |   -> standalone defender, kind="trickle"     | member)  |   field  -> mild forward owned flag   |
+        | GetUnitToSpawn / picker UNCHANGED            |          |                                      |
         +---------------------------------------------+          +--------------------------------------+
 ```
+
+Why a trickle, not a picker injection: every wave spawn fills an attack
+`Group` (`Context.FillGroup` is always set in the wave driver), and group
+membership overrides the defender role in `CaptureFlag` — a grouped piece
+chases the group's attack target and dies. The ONLY standalone-defender path
+is the idle-between-waves trickle (used today by MG defenders and officers,
+`kind="trickle"`). Artillery must use that path to reach the defender router.
 
 ## Data flow
 
@@ -94,18 +102,20 @@ Conclusions:
 BUILD (offline):
   RobZ mp-set t(...) tag --> arty subtype --> {priority, arty=} --> written into each bot.data.lua nation row
 
-RUNTIME SPAWN (Phase A):
-  on successful ratio-tier spawn (OnFill):
-    RatioCount++ ; when RatioCount >= CycleSize(phase):
-        AuxOwed = AuxPerCycle                 (existing)
-        ArtyCycleCount++                       (new)
-        when ArtyCycleCount >= ArtyEveryCycles (=2) AND phase in {mid, late}:
-            ArtyOwed = ArtyPerCycle ; ArtyCycleCount = 0
-  selection (GetUnitToSpawn), in order:
-    ArmorLead -> [ArtyOwed>0 AND phase != early AND GroupArtyCount(g) < ArtyCap
-                  ? collectArty(pool,g) -> GetRandomItem(arty, priority)] -> AuxOwed -> DecideTier
-  on successful spawn where class == ArtilleryTank:
-    ArtyOwed--                                 (mirrors AuxOwed--)
+RUNTIME SPAWN (Phase A) -- in OnGameQuant's idle-between-waves window (WaveRemaining == 0):
+  priority chain, at most one spawn per tick:
+    MG defender trickle (existing)
+      -> ARTILLERY trickle (new):
+           if Elapsed() - LastArtyTime >= ArtyIntervalSec (=45)
+              AND CurrentPhase in {mid, late}
+              AND HeldFlagCount() > 0
+              AND LiveArtyCount() < ArtyCap (=1):
+                u = GetArtyUnit()                       -- roster ArtilleryTank, GetRandomItem by priority
+                if u: Spawn(u) ; queue {kind="trickle", info=u} ; LastArtyTime = Elapsed()
+                      (on Spawn failure: FailCooldown[u.unit] = Elapsed())
+      -> combat backfill (existing)
+  GetUnitToSpawn / the wave picker is UNCHANGED; the L657 collectAux exclusion of
+  ArtilleryTank STAYS (artillery must never enter a group fill).
 
 RUNTIME ROUTE (Phase B):
   SetSquadOrder timer -> CaptureFlag(squad):
@@ -128,18 +138,20 @@ RUNTIME ROUTE (Phase B):
 
 ### Phase A: spawn selection (`bot.lua` + data)
 
+Artillery spawns as a standalone defender trickle modeled on the existing MG
+defender trickle (`GetMGUnit` / `LiveMGCount` / `DefenderIntervalSec` /
+`DefenderCap`). The wave picker (`GetUnitToSpawn`) is not touched.
+
 | Component | Approach |
 |---|---|
-| Constants | `ArtyCap = 1`, `ArtyPerCycle = 1`, `ArtyEveryCycles = 2` near existing aux constants |
-| Context fields | `ArtyOwed = 0`, `ArtyCycleCount = 0` in Context init |
-| `GroupArtyCount(g)` | Mirror `GroupEliteCount`: count live `ArtilleryTank` members in group `g` |
-| `collectArty(pool, g)` | Collect `class == ArtilleryTank` from pool; return empty when `GroupArtyCount(g) >= ArtyCap` |
-| Injection block | In `GetUnitToSpawn`, after the `ArmorLead` block and before the `AuxOwed` block; guarded by `phase.name ~= "early"` and `ArtyOwed > 0`; picks via `GetRandomItem(collectArty(...), function(t) return t.priority end)` |
-| Aux exclusion | In `collectAux`, replace the hard `ArtilleryTank` exclusion: aux still excludes artillery (it now has its own path), so the exclusion line stays in `collectAux`; the spawn-disable is lifted only by adding the new artillery path |
-| Cycle / decrement | In `OnFill`, alongside the `AuxOwed = AuxPerCycle` top-up: increment `ArtyCycleCount`, top up `ArtyOwed` per the rule; alongside `AuxOwed--`: decrement `ArtyOwed` when the spawned unit is `ArtilleryTank` |
+| Constants | `ArtyIntervalSec = 45`, `ArtyCap = 1` near `DefenderIntervalSec` / `DefenderCap` |
+| Context field | `LastArtyTime = 0` in Context init (mirrors `LastDefenderTime`) |
+| `GetArtyUnit()` | Mirror `GetMGUnit`: from `Purchases[1].Units[army]`, collect rows with `class == UnitClass.ArtilleryTank`, return `GetRandomItem(arty, function(t) return t.priority end)` (tag priority biases which piece); `nil` if none |
+| `LiveArtyCount()` | Mirror `LiveMGCount`: count `Context.FieldUnits` entries with `class == UnitClass.ArtilleryTank` |
+| Trickle block | In `OnGameQuant`'s idle window (the `else` after `WaveRemaining > 0`), add a branch after the MG defender branch and before backfill: gate on `Elapsed() - Context.LastArtyTime >= ArtyIntervalSec`, `CurrentPhase(Elapsed()).name ~= "early"`, `HeldFlagCount() > 0`, `LiveArtyCount() < ArtyCap`; spawn via `GetArtyUnit()`, queue `{kind = "trickle", info = u}`, set `LastArtyTime`; on failure set `FailCooldown` |
 
-`TierOf` is unchanged (artillery stays `nil`, never pollutes the ratio tiers).
-`DefenderClasses[ArtilleryTank]` is unchanged (artillery still defends).
+`GetUnitToSpawn`, `TierOf`, `collectAux` (including its `ArtilleryTank`
+exclusion at L657), and `DefenderClasses[ArtilleryTank]` are all unchanged.
 
 ### Phase B: placement (`bot.lua`)
 
@@ -172,9 +184,10 @@ Routing profiles (axis: 1 = frontmost / closest to enemy home; tunable):
 
 - **Artillery must spawn standalone**, never seeded into an attack Group. Group
   membership overrides the defender role in `CaptureFlag`, so a grouped piece
-  would chase the group's attack target and die. The aux-style trickle produces
-  standalone units, which satisfies this. The implementation must verify the
-  artillery injection path does not enter group-fill, and a test must assert it.
+  would chase the group's attack target and die. The trickle path satisfies this
+  by construction: it spawns outside the wave/group-fill loop and queues
+  `kind = "trickle"` (the same path MG defenders use), so `Context.SquadGroup`
+  is never set for the piece and `CaptureFlag` reaches its defender branch.
 - **Spawn failure** reuses the existing `FailCooldown` mechanism; no new error
   handling.
 - **Unknown maps**: `LabelFlags` already falls back to all-CONTESTED, so
@@ -188,14 +201,15 @@ Routing profiles (axis: 1 = frontmost / closest to enemy home; tunable):
 ## Testing
 
 - Lua spec `arty_spec.lua`:
-  - `GroupArtyCount` counts only live artillery members.
-  - `collectArty` returns artillery from the pool and returns empty when the
-    group is at `ArtyCap`.
-  - Cycle top-up fires only every `ArtyEveryCycles` (=2) and only in mid/late.
+  - `LiveArtyCount` counts only `ArtilleryTank` entries in `FieldUnits`.
+  - `GetArtyUnit` returns only `ArtilleryTank` rows and `nil` when the roster
+    has none; with multiple it draws by priority.
+  - The trickle gate respects `ArtyCap` (no spawn when `LiveArtyCount >= 1`),
+    `ArtyIntervalSec` (no spawn before 45s elapsed since last), the mid/late
+    phase gate (no spawn in early), and `HeldFlagCount() > 0`.
   - `ArtilleryFlagPriority` ranks owned flags correctly for each of the three
     subtypes (rocket favors high axis, heavy favors low axis, field in between),
     and gives non-owned flags only the drift weight.
-  - Artillery injection produces standalone units, not group members.
 - Python `test_build_arty_roster.py` (plain-assert, repo convention):
   - dedup of existing + reference rows.
   - `t(...)` tag -> `arty` subtype -> `priority` mapping.
@@ -203,6 +217,7 @@ Routing profiles (axis: 1 = frontmost / closest to enemy home; tunable):
 
 ## Open tuning knobs (defaults set, adjustable later)
 
-- `ArtyEveryCycles = 2` (artillery trickles at half the aux cadence).
+- `ArtyIntervalSec = 45` (artillery trickle cadence; MG defenders are 20s).
+- `ArtyCap = 1` (max live artillery fielded at once; MG cap is 3).
 - Subtype priorities: rocket 0.3, heavy 0.5, field 0.8.
 - Routing axis curves per subtype (steepness of the forward / rear bias).
