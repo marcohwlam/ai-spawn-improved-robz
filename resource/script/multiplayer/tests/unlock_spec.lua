@@ -7,8 +7,7 @@ local units = {
 }
 
 local function sample(seconds)
-	Context.QuantsPerSec = 1
-	Context.MatchQuants = seconds
+	Context.GameClock = seconds
 	Context.FailCooldown = {}
 	local seen = {}
 	for i = 1, 200 do
