@@ -30,6 +30,8 @@ Context = {
 	MatchQuants = 0,   -- quant ticks since match start (elapsed-time estimate)
 	StartTime = nil,   -- os.time() at match start; set in OnGameStart
 	QuantsPerSec = nil,-- calibrated quant rate; nil until the calibration window closes
+	GameClock = 0,     -- real game-seconds since match start (AdvanceClock accumulates this)
+	LastWall = nil,    -- os.time() at the last Quant tick
 	FailCooldown = {}, -- unit.unit -> MatchQuants tick of last FAILED spawn (skip a while)
 	PrevOwned = {},    -- flag name -> true if we owned it last tick
 	LostStamp = {},    -- flag name -> MatchQuants when we lost it (recapture priority)
@@ -85,15 +87,26 @@ local CALIB_MIN_Q = 200  -- minimum quants before trusting the ratio
 local QPS_MIN     = 10   -- clamp floor for a calibrated rate
 local QPS_MAX     = 200  -- clamp ceiling
 local DEFAULT_QPS = 32   -- provisional rate before calibration (measured ~32)
+local PAUSE_CLAMP = 2  -- seconds; an inter-quant os.time gap larger than this is a pause/hitch, skipped
 
 
--- Match elapsed seconds. Uses the calibrated quant rate once available; before calibration,
--- falls back to wall-clock (os.time), which only governs the first ~CALIB_SEC of a match.
+-- Match elapsed seconds: a wall-clock accumulator advanced only on Quant ticks (see AdvanceClock),
+-- so it tracks real game-seconds and is pause-immune (frozen while the sim is paused).
 function Elapsed()
-	if Context.QuantsPerSec then
-		return Context.MatchQuants / Context.QuantsPerSec
+	return Context.GameClock
+end
+
+-- Accumulate real seconds between consecutive Quant events. A gap > PAUSE_CLAMP (pause / multi-second
+-- hitch) or a backward clock step is skipped so the clock never jumps.
+function AdvanceClock()
+	local now = os.time()
+	if Context.LastWall then
+		local d = now - Context.LastWall
+		if d >= 0 and d <= PAUSE_CLAMP then
+			Context.GameClock = Context.GameClock + d
+		end
 	end
-	return os.time() - (Context.StartTime or os.time())
+	Context.LastWall = now
 end
 
 -- Quant length of a duration in seconds, at the current (or provisional) rate.
@@ -1062,6 +1075,8 @@ function OnGameStart()
 	Context.MatchQuants = 0
 	Context.StartTime = os.time()
 	Context.QuantsPerSec = nil
+	Context.GameClock = 0
+	Context.LastWall = os.time()
 	Context.WaveRemaining = 0
 	Context.WaveFails = 0
 	Context.ArmorLead = 0
@@ -1158,6 +1173,7 @@ end
 
 function OnGameQuant()
 	Context.MatchQuants = Context.MatchQuants + 1
+	AdvanceClock()
 	Context.QuantCount = Context.QuantCount + 1
 	if Context.QuantsPerSec == nil then
 		local dtReal = os.time() - (Context.StartTime or os.time())

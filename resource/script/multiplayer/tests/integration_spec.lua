@@ -15,8 +15,7 @@ local units = {
 -- BITE: if the unlockOk gate were removed, medtk/heavytk would enter the pool and ArmorLead would
 -- pick them here, tripping the assertions below. With the gate intact they never enter the pool,
 -- ArmorLead finds no armor and falls through to normal (rifle/light) selection.
-Context.QuantsPerSec = 1
-Context.MatchQuants = 0
+Context.GameClock = 0
 local seenEarly = {}
 for i = 1, 200 do
 	Context.ArmorLead = 1

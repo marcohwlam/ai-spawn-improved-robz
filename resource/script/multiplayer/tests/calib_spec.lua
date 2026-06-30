@@ -9,9 +9,10 @@ Context.StartTime = os.time()
 Context.QuantsPerSec = nil
 Context.MatchQuants = 0
 
--- Before calibration: Elapsed() uses the wall fallback (os.time - StartTime).
+-- Elapsed() returns GameClock (wall-clock accumulator); Q() uses QuantsPerSec (or DEFAULT_QPS).
 fakeNow = 1005
-assert(Elapsed() == 5, "pre-calib Elapsed uses wall delta, got " .. tostring(Elapsed()))
+Context.GameClock = 5
+assert(Elapsed() == 5, "Elapsed returns GameClock, got " .. tostring(Elapsed()))
 assert(Q(10) == 10 * 32, "pre-calib Q uses DEFAULT_QPS 32, got " .. tostring(Q(10)))
 
 -- Drive quants; calibration fires once dtReal >= 20 and mq >= 200.
@@ -37,10 +38,11 @@ assert(Context.QuantsPerSec ~= nil, "should have calibrated")
 assert(Context.QuantsPerSec >= 30 and Context.QuantsPerSec <= 34,
 	"calibrated rate ~32, got " .. tostring(Context.QuantsPerSec))
 
--- After calibration Elapsed() = mq / QuantsPerSec.
+-- After calibration Q() uses QuantsPerSec; Elapsed() still returns GameClock.
 Context.QuantsPerSec = 40
 Context.MatchQuants = 4000
-assert(Elapsed() == 100, "post-calib Elapsed = mq/QPS, got " .. tostring(Elapsed()))
+Context.GameClock = 100
+assert(Elapsed() == 100, "Elapsed returns GameClock, got " .. tostring(Elapsed()))
 assert(Q(10) == 400, "post-calib Q = sec*QPS, got " .. tostring(Q(10)))
 
 -- Clamp guards a wild ratio.
