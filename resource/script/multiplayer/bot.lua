@@ -28,6 +28,8 @@ Context = {
 	FillGroup = nil,    -- index of the group currently being filled (set per spawn)
 	AuxOwed = 0,       -- aux units still to inject in the current batch
 	MatchQuants = 0,   -- quant ticks since match start (elapsed-time estimate)
+	StartTime = nil,   -- os.time() at match start; set in OnGameStart
+	QuantsPerSec = nil,-- calibrated quant rate; nil until the calibration window closes
 	FailCooldown = {}, -- unit.unit -> MatchQuants tick of last FAILED spawn (skip a while)
 	PrevOwned = {},    -- flag name -> true if we owned it last tick
 	LostStamp = {},    -- flag name -> MatchQuants when we lost it (recapture priority)
@@ -41,44 +43,63 @@ Context = {
 -- unit landed and the rest were rejected, leaving 3000+ MP unspent at game end).
 -- Each wave attempts up to phase.budget units, one every WaveSpawnSpacing quants,
 -- and ends early only after MaxWaveFails spawns in a row fail (= truly out of MP).
-local WaveInterval    = 60 * 70 -- quants between wave starts (~60s at ~70 quant/sec)
-local MinWaveInterval = 10 * 70 -- floor: never faster than ~10s even when far behind
+local WaveIntervalSec     = 60   -- seconds between wave starts
+local MinWaveIntervalSec  = 10   -- floor: never faster than ~10s even when far behind
 local WaveSpawnSpacing = 7      -- quants between spawns inside a wave (~0.1s)
 local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spent, end wave
 
 -- Neutral-flag capper trickle: every NeutralInterval quants, if any flag is
 -- neutral, spawn one cheap line-infantry squad ordered to grab a neutral flag.
-local NeutralInterval = 5 * 70  -- ~5s between capper checks
+local NeutralIntervalSec  = 5    -- seconds between capper checks
 local CapperCap       = 2       -- max live single-soldier cappers (prevents stacking)
 
 -- When a Spawn fails (usually the picked unit is unaffordable right now), bench
--- that unit for FailCooldownQuants so the picker falls through to a cheaper tier
+-- that unit for Q(FailCooldownSec) quants so the picker falls through to a cheaper tier
 -- instead of hammering the same too-expensive unit until MaxWaveFails ends the wave.
-local FailCooldownQuants = 10 * 70 -- ~10s bench after a failed spawn
+local FailCooldownSec     = 10   -- seconds bench after a failed spawn
 
 -- Between waves the field still loses units; backfill trickles one spawn every
 -- BackfillInterval quants while idle to keep the composition near its ratio.
-local BackfillInterval = 3 * 70 -- ~3s between idle backfill spawns
+local BackfillIntervalSec = 3    -- seconds between idle backfill spawns
 
 -- Between-wave defensive trickle: a small, capped number of mobile MG teams (mgs2)
 -- sent to dig in on owned flags. Only fires while idle and only when we hold ground.
-local DefenderInterval = 20 * 70 -- ~20s between defender checks
+local DefenderIntervalSec = 20   -- seconds between defender checks
 local DefenderCap      = 3       -- max live MG teams the bot keeps fielded
 
 -- Officer keep-alive: after OfficerUnlock seconds, keep up to OfficerCap officers parked
 -- at the spawn (no capture order) -- they hold the unit cap and must not die at the front.
 local OfficerUnlock   = 600     -- seconds before officers become available (~10 min)
-local OfficerInterval = 30 * 70 -- quants between officer checks (~30s)
+local OfficerIntervalSec  = 30   -- seconds between officer checks
 local OfficerCap      = 1       -- max live officers
 
 -- AT-rifle keep-alive: from mid phase on, keep one AT rifle on the field (anti half-track).
-local AtRifleInterval = 20 * 70 -- ~20s between checks
+local AtRifleIntervalSec  = 20   -- seconds between AT-rifle keep-alive checks
 local AtRifleCap      = 1       -- max live AT rifles kept
 
--- Quant rate, measured ~70/sec. Only used to print an elapsed-seconds estimate
--- in the debug log (mq -> t). Unit unlocks are left entirely to the engine, so
--- this value no longer gates spawning; it is purely cosmetic for log review.
-local QuantsPerSec = 70
+-- Quant-rate calibration. The Quant event rate is NOT a fixed 70/sec; it is measured once
+-- per match from os.time() and stored in Context.QuantsPerSec. Until then, Elapsed() uses a
+-- wall-clock fallback and Q() uses DEFAULT_QPS.
+local CALIB_SEC   = 20   -- real seconds of calibration window
+local CALIB_MIN_Q = 200  -- minimum quants before trusting the ratio
+local QPS_MIN     = 10   -- clamp floor for a calibrated rate
+local QPS_MAX     = 200  -- clamp ceiling
+local DEFAULT_QPS = 32   -- provisional rate before calibration (measured ~32)
+
+
+-- Match elapsed seconds. Uses the calibrated quant rate once available; before calibration,
+-- falls back to wall-clock (os.time), which only governs the first ~CALIB_SEC of a match.
+function Elapsed()
+	if Context.QuantsPerSec then
+		return Context.MatchQuants / Context.QuantsPerSec
+	end
+	return os.time() - (Context.StartTime or os.time())
+end
+
+-- Quant length of a duration in seconds, at the current (or provisional) rate.
+function Q(sec)
+	return sec * (Context.QuantsPerSec or DEFAULT_QPS)
+end
 
 local GroupSize = 8   -- target member count per group
 local MaxGroups = 1   -- live groups at a time (1 = single concentrated push; raise for more fronts)
@@ -382,13 +403,13 @@ function ManageGroups()
 	if not Context.Groups[1] then
 		local t = PickGroupTarget(nil)
 		Context.Groups[1] = { members = {}, size = GroupSize, target = t, pending = 0,
-			phase = CurrentPhase(Context.MatchQuants / QuantsPerSec).name }
+			phase = CurrentPhase(Elapsed()).name }
 		print("[AISPAWN] GROUP_NEW id=1 target=" .. tostring(t) .. PidTag())
 	elseif MaxGroups >= 2 and not Context.Groups[2]
 	   and GroupMemberCount(Context.Groups[1]) >= Context.Groups[1].size then
 		local t = PickGroupTarget(Context.Groups[1].target)
 		Context.Groups[2] = { members = {}, size = GroupSize, target = t, pending = 0,
-			phase = CurrentPhase(Context.MatchQuants / QuantsPerSec).name }
+			phase = CurrentPhase(Elapsed()).name }
 		print("[AISPAWN] GROUP_NEW id=2 target=" .. tostring(t) .. PidTag())
 	end
 end
@@ -447,7 +468,7 @@ function PruneGroups()
 				-- a Spawn/OnGameSpawn pairing was lost at the engine level; age the slot out so
 				-- it cannot orphan (and desync the queue) for the rest of the match.
 				g.staleSince = g.staleSince or Context.MatchQuants
-				if Context.MatchQuants - g.staleSince > 3 * QuantsPerSec then
+				if Context.MatchQuants - g.staleSince > Q(3) then
 					print("[AISPAWN] GROUP_END id=" .. i .. " reason=stale_pending" .. PidTag())
 					Context.Groups[i] = nil
 				end
@@ -504,17 +525,17 @@ end
 -- banks for pricier units). The further behind on flags, the shorter the gap (each flag
 -- deficit speeds it up), down to MinWaveInterval. Even/ahead -> full phase-scaled gap.
 function WaveIntervalNow()
-	local phase = CurrentPhase(Context.MatchQuants / QuantsPerSec)
-	local base = WaveInterval * (phase.waveMult or 1.0)
+	local phase = CurrentPhase(Elapsed())
+	local base = Q(WaveIntervalSec) * (phase.waveMult or 1.0)
 	local deficit = FlagDeficit()
 	if deficit <= 0 then return base end
-	return math.max(MinWaveInterval, math.floor(base / (1.0 + 0.25 * deficit)))
+	return math.max(Q(MinWaveIntervalSec), math.floor(base / (1.0 + 0.25 * deficit)))
 end
 
 -- Live-squad ceiling for the current phase (grows +2 per phase). Falls back to the
 -- MaxLiveSquads base if a phase omits squadCap.
 function CurrentSquadCap()
-	local phase = CurrentPhase(Context.MatchQuants / QuantsPerSec)
+	local phase = CurrentPhase(Elapsed())
 	return phase.squadCap or MaxLiveSquads
 end
 
@@ -596,7 +617,7 @@ function GetUnitToSpawn(units)
 	local teamSize = BotApi.Instance.teamSize
 	local income = BotApi.Commands:Income(BotApi.Instance.playerId)
 	local enemyHasTanks = BotApi.Commands:EnemyHasTanks()
-	local elapsed = Context.MatchQuants / QuantsPerSec
+	local elapsed = Elapsed()
 	local phase = CurrentPhase(elapsed)
 	local capRank = TierRank[phase.armorCap]
 
@@ -611,7 +632,7 @@ function GetUnitToSpawn(units)
 		local unlockOk = (unit.unlock == nil) or (elapsed >= unit.unlock)
 		local failed = Context.FailCooldown[unit.unit]
 		local notRecentlyFailed = (failed == nil)
-			or (Context.MatchQuants - failed >= FailCooldownQuants)
+			or (Context.MatchQuants - failed >= Q(FailCooldownSec))
 		local tier = TierOf(unit)
 		local capOk = (tier == nil) or (TierRank[tier] <= capRank) -- aux not capped
 		local phaseOk = (unit.phase == nil) or (unit.phase == phase.name) -- per-unit phase lock
@@ -1041,6 +1062,8 @@ function OnGameStart()
 	Context.Purchase = PIter:new(Purchases)
 	Context.QuantCount = 0
 	Context.MatchQuants = 0
+	Context.StartTime = os.time()
+	Context.QuantsPerSec = nil
 	Context.WaveRemaining = 0
 	Context.WaveFails = 0
 	Context.ArmorLead = 0
@@ -1080,7 +1103,7 @@ function AttemptSpawn(tag)
 	local ok = BotApi.Commands:Spawn(unit.unit, MaxSquadSize)
 	local field = GetFieldCounts()
 	print("[AISPAWN] " .. tag .. " mq=" .. tostring(Context.MatchQuants)
-		.. " phase=" .. CurrentPhase(Context.MatchQuants / QuantsPerSec).name
+		.. " phase=" .. CurrentPhase(Elapsed()).name
 		.. " income=" .. tostring(BotApi.Commands:Income(BotApi.Instance.playerId))
 		.. " squads=" .. tostring(LiveSquadCount())
 		.. " H=" .. tostring(field.heavy)
@@ -1094,7 +1117,7 @@ function AttemptSpawn(tag)
 		.. " ok=" .. tostring(ok))
 	local g = Context.FillGroup and Context.Groups[Context.FillGroup]
 	if g then
-		local pname = CurrentPhase(Context.MatchQuants / QuantsPerSec).name
+		local pname = CurrentPhase(Elapsed()).name
 		if g.phase ~= pname then
 			g.phase = pname
 			print("[AISPAWN] GROUP_UP id=" .. tostring(Context.FillGroup) .. " phase=" .. pname .. PidTag())
@@ -1124,7 +1147,7 @@ function AttemptSpawn(tag)
 				Context.ArmorLead = Context.ArmorLead - 1
 			end
 			Context.RatioCount = Context.RatioCount + 1
-			local phase = CurrentPhase(Context.MatchQuants / QuantsPerSec)
+			local phase = CurrentPhase(Elapsed())
 			if Context.RatioCount >= CycleSize(phase) then
 				Context.RatioCount = 0
 				Context.AuxOwed = AuxPerCycle
@@ -1138,6 +1161,12 @@ end
 function OnGameQuant()
 	Context.MatchQuants = Context.MatchQuants + 1
 	Context.QuantCount = Context.QuantCount + 1
+	if Context.QuantsPerSec == nil then
+		local dtReal = os.time() - (Context.StartTime or os.time())
+		if dtReal >= CALIB_SEC and Context.MatchQuants >= CALIB_MIN_Q then
+			Context.QuantsPerSec = math.max(QPS_MIN, math.min(QPS_MAX, Context.MatchQuants / dtReal))
+		end
+	end
 
 	-- Track flags we just lost (were ours last tick, now enemy) for recapture priority.
 	for i, flag in pairs(BotApi.Scene.Flags) do
@@ -1155,7 +1184,7 @@ function OnGameQuant()
 	-- no wave is in progress).
 	if Context.QuantCount >= WaveIntervalNow() and Context.WaveRemaining == 0 then
 		Context.QuantCount = 0
-		local phase = CurrentPhase(Context.MatchQuants / QuantsPerSec)
+		local phase = CurrentPhase(Elapsed())
 		local budget = math.floor(phase.budget * LosingBudgetMult())
 		Context.WaveRemaining = budget
 		Context.WaveFails = 0
@@ -1166,7 +1195,7 @@ function OnGameQuant()
 		local ng = 0
 		for i = 1, MaxGroups do if Context.Groups[i] then ng = ng + 1 end end
 		print("[AISPAWN] WAVE mq=" .. tostring(Context.MatchQuants)
-			.. " t=" .. tostring(math.floor(Context.MatchQuants / QuantsPerSec))
+			.. " t=" .. tostring(math.floor(Elapsed()))
 			.. " phase=" .. phase.name .. " budget=" .. tostring(budget)
 			.. " deficit=" .. tostring(FlagDeficit())
 			.. " groups=" .. tostring(ng))
@@ -1209,7 +1238,7 @@ function OnGameQuant()
 		-- priority, then the combat backfill toward the deficit tier.
 		Context.BackfillCount = Context.BackfillCount + 1
 		Context.DefenderCount = Context.DefenderCount + 1
-		if Context.DefenderCount >= DefenderInterval
+		if Context.DefenderCount >= Q(DefenderIntervalSec)
 		and HeldFlagCount() > 0 and LiveMGCount() < DefenderCap then
 			Context.DefenderCount = 0
 			local mg = GetMGUnit()
@@ -1224,7 +1253,7 @@ function OnGameQuant()
 				end
 				UpdateUnitToSpawn(Context.Purchase)
 			end
-		elseif Context.BackfillCount >= BackfillInterval then
+		elseif Context.BackfillCount >= Q(BackfillIntervalSec) then
 			Context.BackfillCount = 0
 			Context.FillGroup = GroupToFill()
 			if Context.FillGroup ~= nil and OwnedSquadCount() < CurrentSquadCap() then
@@ -1235,7 +1264,7 @@ function OnGameQuant()
 
 	-- Neutral-flag capper trickle, independent of the wave cadence.
 	Context.NeutralCount = Context.NeutralCount + 1
-	if Context.NeutralCount >= NeutralInterval then
+	if Context.NeutralCount >= Q(NeutralIntervalSec) then
 		Context.NeutralCount = 0
 		if CountNeutralFlags() > 0 and LiveCapperCount() < CapperCap then
 			local line = GetLineUnit()
@@ -1254,9 +1283,9 @@ function OnGameQuant()
 	-- at the spawn. They are spawned here (never via the ratio/aux pool) so OnGameSpawn
 	-- can withhold their capture order and leave them safe in the rear.
 	Context.OfficerCount = Context.OfficerCount + 1
-	if Context.OfficerCount >= OfficerInterval then
+	if Context.OfficerCount >= Q(OfficerIntervalSec) then
 		Context.OfficerCount = 0
-		if Context.MatchQuants / QuantsPerSec >= OfficerUnlock
+		if Elapsed() >= OfficerUnlock
 		and LiveOfficerCount() < OfficerCap then
 			local off = GetOfficerUnit()
 			if off then
@@ -1276,9 +1305,9 @@ function OnGameQuant()
 	-- AT-rifle keep-alive: from mid phase on, keep one AT rifle fielded as a GROUP member so it
 	-- moves with and escorts the platoon (anti half-track) instead of wandering alone.
 	Context.AtRifleCount = Context.AtRifleCount + 1
-	if Context.AtRifleCount >= AtRifleInterval then
+	if Context.AtRifleCount >= Q(AtRifleIntervalSec) then
 		Context.AtRifleCount = 0
-		if CurrentPhase(Context.MatchQuants / QuantsPerSec).name ~= "early"
+		if CurrentPhase(Elapsed()).name ~= "early"
 		and LiveAtRifleCount() < AtRifleCap
 		and OwnedSquadCount() < CurrentSquadCap() then
 			-- Attach to a group: the one being filled, else the first live group. Only spawn
