@@ -363,3 +363,178 @@ git commit -m "feat: regenerate sectors so both teams get OWN home flags (#4)"
 **Placeholder scan:** No TBD/TODO; every code step shows full code; commands have expected output. The only conditional is Task 4 Step 5's "if a tier test fails" branch, which gives a concrete action (update expected value, reference plan, never touch bot.lua).
 
 **Type consistency:** `_side_dist(flags, bases, name, side)` defined in Task 2, used in Task 2 trim and dedupe. `renorm(comp, adj)` defined Task 3, used Tasks 3-4. `adjacency` return shape `{name:(nb_list, base_list)}` consistent throughout; `base_list` is `[]`/`["a"]`/`["b"]`. `comp` tuple `(x,y,axis)` consistent.
+
+---
+
+# REWORK (renorm rejected → base-tag labeling)
+
+Supersedes Tasks 3-4's renorm approach. Tasks 1-2 (baseline gate, dedupe+symmetric trim)
+stand. See revised spec `docs/superpowers/specs/2026-06-29-home-defense-sectors-design.md`.
+
+### Task R1: Revert renorm in build_sectors.py
+
+**Files:**
+- Modify: `tools/build_sectors.py` (delete `renorm`, fix `main()`)
+- Test: `tools/test_build_sectors.py` (remove renorm tests)
+
+- [ ] **Step 1: Delete the `renorm` function**
+
+Remove the entire `def renorm(comp, adj):` function (lines 95-111, ending just before
+`def emit_lua(entries):`).
+
+- [ ] **Step 2: Restore `main()` to emit raw axis**
+
+In `main()`, change:
+```python
+            comp = compute(bases, flags)
+            adj = adjacency(bases, flags)
+            entries.append((m, bases, renorm(comp, adj), adj))
+```
+to:
+```python
+            comp = compute(bases, flags)
+            adj = adjacency(bases, flags)
+            entries.append((m, bases, comp, adj))
+```
+
+- [ ] **Step 3: Remove renorm tests, keep a raw-axis + symmetric-count check**
+
+In `tools/test_build_sectors.py`, delete the two-point renorm block, the crossed-guard
+block, and the bastogne-renorm block (everything from the comment `# --- two-point renorm
+(synthetic) ---` through `print("bastogne renorm OK")`). Append instead:
+```python
+# --- raw axis preserved + symmetric base count (bastogne) ---
+adj = bs.adjacency(bases, flags)
+a_n = sum(1 for n in flags if adj[n][1] == ["a"])
+b_n = sum(1 for n in flags if adj[n][1] == ["b"])
+assert a_n == b_n and a_n >= 1, (a_n, b_n)
+comp = bs.compute(bases, flags)
+assert comp["f5"][2] < 0.4 and comp["f10"][2] > 0.59, (comp["f5"], comp["f10"])
+print("bastogne base+axis OK")
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `cd tools && python3 test_build_sectors.py`
+Expected: `build_sectors test OK`, `dedupe+trim test OK`, `adjacency test OK`,
+`bastogne base+axis OK`. No reference to `renorm` remains: `grep -n renorm test_build_sectors.py build_sectors.py` returns nothing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tools/build_sectors.py tools/test_build_sectors.py
+git commit -m "revert: drop axis renorm; emit raw axis (base-tag labeling)"
+```
+
+### Task R2: LabelFlags base-tag classification
+
+**Files:**
+- Modify: `resource/script/multiplayer/bot.lua`
+
+- [ ] **Step 1: Replace the axis-threshold sector block**
+
+In `LabelFlags`, replace lines 823-825:
+```lua
+		local sector = "CONTESTED"
+		if p.myAxis < SectorOwnMax then sector = "OWN"
+		elseif p.myAxis >= SectorEnemyMin then sector = "ENEMY" end
+```
+with:
+```lua
+		local sector = "CONTESTED"
+		if p.base and p.base[1] then
+			sector = (p.base[1] == team) and "OWN" or "ENEMY"
+		end
+```
+Leave the `Context.FlagLabel[p.name] = {...}` assignment and the `SECTOR` print unchanged
+(they still record `sector`, `rank`, `axis = p.myAxis`).
+
+- [ ] **Step 2: Remove the now-unused constants**
+
+Delete lines 115-116:
+```lua
+local SectorOwnMax   = 0.4  -- myAxis below this => OWN
+local SectorEnemyMin = 0.6  -- myAxis above this => ENEMY; between the two => CONTESTED
+```
+Verify no other use remains: `grep -n 'SectorOwnMax\|SectorEnemyMin' resource/script/multiplayer/bot.lua` returns nothing.
+
+- [ ] **Step 3: Commit** (specs updated in R3; this commit is bot.lua only)
+
+```bash
+git add resource/script/multiplayer/bot.lua
+git commit -m "feat: LabelFlags classifies sector from base tag, not axis cut (#4)"
+```
+
+### Task R3: Regenerate data + rewrite specs
+
+**Files:**
+- Modify (regenerate): `resource/script/multiplayer/flag_sectors.lua`
+- Test: `resource/script/multiplayer/tests/sector_spec.lua`, `tests/routing_spec.lua`
+
+- [ ] **Step 1: Regenerate `flag_sectors.lua` (raw axis now)**
+
+Run from repo root:
+```bash
+python3 tools/build_sectors.py \
+  "/mnt/storage/steam/steamapps/common/Men of War Assault Squad 2/mods/robz realism mod 1.30.10/resource/map.pak" \
+  2v2_bastogne 2v2_sidi_el-barrani 1v1_nikolaev 2v2_mamayev_kurgan \
+  -o resource/script/multiplayer/flag_sectors.lua
+```
+Expected: `wrote ... entries: 4`. Bastogne f5/f6 axis back to ~0.32/0.33, f10 ~0.60, with
+`base={"a"}` on f5/f6 and `base={"b"}` on f4/f10 (2 each).
+
+- [ ] **Step 2: Rewrite `sector_spec.lua` sector assertions**
+
+The map data axis is raw again, so the OLD rank/axis-based expectations return. Update the
+sector assertions to the base-tag model. For team a, replace the prior OWN/ENEMY checks with:
+```lua
+eq(Context.FlagLabel["f5"].sector, "OWN", "a f5 sector")   -- a-base
+eq(Context.FlagLabel["f6"].sector, "OWN", "a f6 sector")   -- a-base
+eq(Context.FlagLabel["f10"].sector, "ENEMY", "a f10 sector") -- b-base
+eq(Context.FlagLabel["f4"].sector, "ENEMY", "a f4 sector")  -- b-base
+eq(Context.FlagLabel["f7"].sector, "CONTESTED", "a f7 sector") -- non-base
+local ownA = 0
+for _, l in pairs(Context.FlagLabel) do if l.sector == "OWN" then ownA = ownA + 1 end end
+assert(ownA == 2, "team a OWN count == base count (2), got " .. ownA)
+```
+For team b:
+```lua
+eq(Context.FlagLabel["f4"].sector, "OWN", "b f4 sector")   -- b-base
+eq(Context.FlagLabel["f10"].sector, "OWN", "b f10 sector") -- b-base
+eq(Context.FlagLabel["f5"].sector, "ENEMY", "b f5 sector") -- a-base
+eq(Context.FlagLabel["f7"].sector, "CONTESTED", "b f7 sector")
+local ownB = 0
+for _, l in pairs(Context.FlagLabel) do if l.sector == "OWN" then ownB = ownB + 1 end end
+assert(ownB == 2, "team b OWN count == base count (2), got " .. ownB)
+```
+Keep the existing rank assertions (rank still from `myAxis`: a f10 rank 1, a f5 rank 11,
+b f5 rank 1, b f10 rank 11) and the unknown-map fallback block unchanged.
+
+- [ ] **Step 3: Update `routing_spec.lua` expectations**
+
+Run `cd resource/script/multiplayer && lua tests/routing_spec.lua`. For each failing
+assertion, reconcile against the base-tag labels (f5/f6 OWN for a; f4/f10 ENEMY for a;
+all midfield CONTESTED). The tier-1 (OWN home) and tier-2 (CONTESTED frontier f7) scenarios
+still hold; update only expectation values that assumed the old axis gradient, with a comment
+referencing the revised spec. Do NOT change bot.lua to make a test pass; if a failure is a
+real logic bug, STOP and report.
+
+- [ ] **Step 4: Run all Lua specs**
+
+Run from `resource/script/multiplayer/`:
+```bash
+cd resource/script/multiplayer
+for s in sector routing frontier partition integration phase mapname; do
+  lua tests/${s}_spec.lua >/dev/null 2>&1 && echo "$s PASS" || echo "$s FAIL"
+done
+```
+Expected: all PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add resource/script/multiplayer/flag_sectors.lua \
+        resource/script/multiplayer/tests/sector_spec.lua \
+        resource/script/multiplayer/tests/routing_spec.lua
+git commit -m "feat: regenerate raw-axis sectors; base-tag labels, equal OWN counts (#4)"
+```
