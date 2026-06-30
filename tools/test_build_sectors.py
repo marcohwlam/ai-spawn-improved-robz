@@ -21,6 +21,37 @@ assert comp["f10"][2] > 0.59, comp["f10"]
 assert bs.fingerprint(flags) == "f1,f10,f2,f20,f3,f4,f5,f6,f7,f8,f9", bs.fingerprint(flags)
 print("build_sectors test OK")
 
+# --- synthetic dedupe + symmetric trim (no pak) ---
+def _synthetic_trim():
+    # a-bases deep-left, b-base just right of center: a gets 2, b gets 3 -> trim to 2
+    bases = {"a1": (-4000, 0), "b1": (200, 0)}
+    flags = {"f1": (-3500, 0), "f2": (-3400, 100),
+             "f3": (100, 0), "f4": (150, 100), "f5": (50, 0)}
+    return bases, flags
+
+def _synthetic_overlap():
+    # KFLOOR forces f2 into both bases' nearest-2; f2 is nearer a (1000 < 1100)
+    bases = {"a1": (-1000, 0), "b1": (1100, 0)}
+    flags = {"f1": (-900, 0), "f2": (0, 0), "f3": (900, 0)}
+    return bases, flags
+
+b, f = _synthetic_trim()
+adj = bs.adjacency(b, f)
+a_set = [n for n in f if adj[n][1] == ["a"]]
+b_set = [n for n in f if adj[n][1] == ["b"]]
+assert len(a_set) == len(b_set), (a_set, b_set)          # symmetric count
+assert all(adj[n][1] in ([], ["a"], ["b"]) for n in f)    # no a+b overlap
+assert set(a_set) == {"f1", "f2"}, a_set
+assert set(b_set) == {"f3", "f4"}, b_set                  # f5 trimmed (farthest)
+
+b, f = _synthetic_overlap()
+adj = bs.adjacency(b, f)
+assert adj["f2"][1] == ["a"], adj["f2"][1]                # dedupe: nearer side a
+a_set = [n for n in f if adj[n][1] == ["a"]]
+b_set = [n for n in f if adj[n][1] == ["b"]]
+assert len(a_set) == len(b_set) == 1, (a_set, b_set)      # trim to min
+print("dedupe+trim test OK")
+
 adj = bs.adjacency(bases, flags)
 nb_f1 = adj["f1"][0]
 assert "f8" in nb_f1 and "f7" in nb_f1, nb_f1            # f1's two nearest (1074, 1195)

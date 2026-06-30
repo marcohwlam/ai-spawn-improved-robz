@@ -43,6 +43,10 @@ def fingerprint(flags):
 THRESH = 2000.0
 KFLOOR = 2
 
+def _side_dist(flags, bases, name, side):
+    ds = [_dist(flags[name], bp) for bn, bp in bases.items() if bn[0] == side]
+    return min(ds) if ds else float("inf")
+
 def adjacency(bases, flags):
     """Return {name: (nb_list, base_list)}. nb = flags within THRESH unioned with the
     KFLOOR nearest, made symmetric. base = sorted team letters whose base is within THRESH
@@ -68,6 +72,31 @@ def adjacency(bases, flags):
             close.add(n)
         for n in close:
             base[n].add(bname[0])
+    # dedupe: a flag tagged for both teams keeps only its nearer side (a wins exact ties)
+    deduped = set()
+    for n in names:
+        if {"a", "b"} <= base[n]:
+            deduped.add(n)
+            da = _side_dist(flags, bases, n, "a")
+            db = _side_dist(flags, bases, n, "b")
+            base[n] = {"a"} if da <= db else {"b"}
+    # trim: keep N = min(countA, countB) nearest flags per side, prioritizing deduped flags
+    a_flags_deduped = sorted((n for n in names if base[n] == {"a"} and n in deduped),
+                             key=lambda n: _side_dist(flags, bases, n, "a"))
+    a_flags_regular = sorted((n for n in names if base[n] == {"a"} and n not in deduped),
+                             key=lambda n: _side_dist(flags, bases, n, "a"))
+    b_flags_deduped = sorted((n for n in names if base[n] == {"b"} and n in deduped),
+                             key=lambda n: _side_dist(flags, bases, n, "b"))
+    b_flags_regular = sorted((n for n in names if base[n] == {"b"} and n not in deduped),
+                             key=lambda n: _side_dist(flags, bases, n, "b"))
+    a_flags = a_flags_deduped + a_flags_regular
+    b_flags = b_flags_deduped + b_flags_regular
+    N = min(len(a_flags), len(b_flags))
+    assert N >= 1, "a side or b side has no base flag"
+    keep = set(a_flags[:N]) | set(b_flags[:N])
+    for n in names:
+        if base[n] and n not in keep:
+            base[n] = set()
     key = lambda s: int(s[1:])
     return {n: (sorted(nb[n], key=key), sorted(base[n])) for n in names}
 
