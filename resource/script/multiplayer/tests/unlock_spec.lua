@@ -6,8 +6,9 @@ local units = {
 	{ class = UnitClass.Vehicle, unit = "lockedtk", priority = 1.0, unlock = 1500 }, -- unlocks at 1500s
 }
 
-local function sample(quants)
-	Context.MatchQuants = quants
+local function sample(seconds)
+	Context.QuantsPerSec = 1
+	Context.MatchQuants = seconds
 	Context.FailCooldown = {}
 	local seen = {}
 	for i = 1, 200 do
@@ -18,12 +19,12 @@ local function sample(quants)
 end
 
 -- Before unlock (elapsed 1000s): locked unit must never appear; free unit does.
-local early = sample(1000 * 70)
+local early = sample(1000)   -- before unlock 1500
 assert(early["freetk"], "free unit should spawn before unlock")
 assert(not early["lockedtk"], "locked unit must NOT spawn before its unlock time")
 
 -- After unlock (elapsed 1600s): locked unit becomes eligible.
-local late = sample(1600 * 70)
+local late = sample(1600)    -- after unlock 1500
 assert(late["lockedtk"], "locked unit should spawn after its unlock time")
 
 -- unit.unlock == nil is available at t=0.
