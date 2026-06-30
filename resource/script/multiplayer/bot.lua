@@ -15,7 +15,6 @@ Context = {
 	LastWaveTime = 0,     -- Elapsed() at last wave start
 	WaveRemaining = 0, -- units left to attempt in the current wave (0 = idle)
 	WaveFails = 0,     -- consecutive failed Spawns this wave (MP-spent detector)
-	ArmorLead = 0,     -- armor units still to front-load at the current wave's start
 	WaveCooldown = 0,  -- quant countdown between spawns within a wave
 	LastNeutralTime = 0,  -- Elapsed() at last neutral-capper trickle
 	LastBackfillTime = 0, -- Elapsed() at last idle backfill
@@ -398,19 +397,6 @@ function GetFieldCounts()
 	for squadId, entry in pairs(Context.FieldUnits) do
 		if not Context.Cappers[squadId] then
 			c.total = c.total + 1
-			local tier = TierOf(entry)
-			if tier then c[tier] = c[tier] + 1 else c.aux = c.aux + 1 end
-		end
-	end
-	return c
-end
-
--- Count one group's live members by tier (heavy/medium/light/rifle/smg); aux not counted.
-function CountByTier(group)
-	local c = { heavy=0, medium=0, light=0, rifle=0, smg=0, aux=0 }
-	for squadId in pairs(group.members) do
-		local entry = Context.FieldUnits[squadId]
-		if entry then
 			local tier = TierOf(entry)
 			if tier then c[tier] = c[tier] + 1 else c.aux = c.aux + 1 end
 		end
@@ -1222,7 +1208,6 @@ function OnGameStart()
 	Context.LastWall = os.time()
 	Context.WaveRemaining = 0
 	Context.WaveFails = 0
-	Context.ArmorLead = 0
 	Context.WaveCooldown = 0
 	Context.LastNeutralTime = 0
 	Context.LastBackfillTime = 0
