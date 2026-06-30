@@ -88,3 +88,13 @@ try:
 except SystemExit:
     pass
 print("renorm crossed-guard OK")
+
+# --- bastogne after renorm: each team has an OWN home flag ---
+rn = bs.renorm(bs.compute(bases, flags), bs.adjacency(bases, flags))
+assert rn["f5"][2] < 0.4 and rn["f6"][2] < 0.4, (rn["f5"], rn["f6"])   # team-a home OWN
+assert rn["f10"][2] > 0.6 and rn["f4"][2] > 0.6, (rn["f10"], rn["f4"]) # team-b home OWN
+adj = bs.adjacency(bases, flags)
+a_n = sum(1 for n in flags if adj[n][1] == ["a"])
+b_n = sum(1 for n in flags if adj[n][1] == ["b"])
+assert a_n == b_n and a_n >= 1, (a_n, b_n)
+print("bastogne renorm OK")

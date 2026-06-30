@@ -24,6 +24,9 @@ eq(Context.FlagLabel["f10"].sector, "ENEMY", "a f10 sector")
 eq(Context.FlagLabel["f10"].rank, 1, "a f10 rank")
 eq(Context.FlagLabel["f5"].sector, "OWN", "a f5 sector")
 eq(Context.FlagLabel["f5"].rank, 11, "a f5 rank")
+local ownA = 0
+for _, l in pairs(Context.FlagLabel) do if l.sector == "OWN" then ownA = ownA + 1 end end
+assert(ownA >= 1, "team a must have >=1 OWN flag, got " .. ownA)
 assert(Context.FlagBases and Context.FlagBases.a1, "a bases populated")
 print("sector team-a OK")
 
@@ -33,6 +36,11 @@ LabelFlags()
 eq(Context.FlagLabel["f5"].rank, 1, "b f5 rank")
 eq(Context.FlagLabel["f5"].sector, "ENEMY", "b f5 sector")
 eq(Context.FlagLabel["f10"].rank, 11, "b f10 rank")
+eq(Context.FlagLabel["f10"].sector, "OWN", "b f10 sector")
+eq(Context.FlagLabel["f4"].sector, "OWN", "b f4 sector")
+local ownB = 0
+for _, l in pairs(Context.FlagLabel) do if l.sector == "OWN" then ownB = ownB + 1 end end
+assert(ownB >= 1, "team b must have >=1 OWN flag, got " .. ownB)
 print("sector team-b OK")
 
 -- unknown map -> fallback C: all CONTESTED, no rank, no bases

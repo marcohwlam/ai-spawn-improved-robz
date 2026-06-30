@@ -37,16 +37,13 @@ BotApi.Scene.Flags = bastogne({})
 LabelFlags(); PartitionFlags()
 eq(PickGroupTarget(nil), nil, "no enemy and no recently-lost -> nil")
 
--- Tier 2 over Tier 3: home secure; enemy holds a CONTESTED flag in our lane that is
--- frontier (we own a neighbor) plus a deeper enemy flag. The frontier-lane one wins.
--- We own f8; f1 is CONTESTED, neighbor of f8, in lane. Enemy holds f1 and f10.
--- f1 is the only tier-2 candidate (CONTESTED, neighbor of owned f8 -> frontier, and mine
--- for playerId 1 per the partition); f10 is tier 3 (ENEMY sector). f1 must win.
+-- After two-point renorm (task-4 plan), f1 axis=0.63 is ENEMY for team a (not CONTESTED).
+-- Both f1 and f10 are ENEMY; f1 wins tier 3 because it is closer to our front than f10.
 Context.LostStamp = {}
 BotApi.Scene.Flags = bastogne({ f8 = "a", f1 = "b", f10 = "b" })
 LabelFlags(); PartitionFlags()
-eq(PickGroupTarget(nil), "f1", "tier2 lane frontier beats tier3 deep flag")
-eq(Context.LastPickTier, 2, "f1 picked at tier 2")
+eq(PickGroupTarget(nil), "f1", "f1 (closer enemy) beats f10 (deeper enemy)")
+eq(Context.LastPickTier, 3, "f1 picked at tier 3")
 
 -- Never-nil: a single deep enemy flag with no frontier still returns it (tier 3).
 Context.LostStamp = {}
