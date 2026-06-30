@@ -111,10 +111,6 @@ local MaxGroups = 1   -- live groups at a time (1 = single concentrated push; ra
 -- the 32-bit engine. Lower this if playing larger team games. Tune per typical match size.
 local MaxLiveSquads = 24
 
--- Flag-sector thresholds on the team-oriented axis (0 = own home, 1 = enemy home).
-local SectorOwnMax   = 0.4  -- myAxis below this => OWN
-local SectorEnemyMin = 0.6  -- myAxis above this => ENEMY; between the two => CONTESTED
-
 -- Half-width (normalized lateral units [0,1]) of the SHARED band around each internal
 -- teammate-band boundary. Flags within this margin belong to both teammates on purpose;
 -- narrower = cleaner split, wider = more overlap/coverage. Tunable.
@@ -821,8 +817,9 @@ function LabelFlags()
 	end)
 	for rank, p in ipairs(present) do
 		local sector = "CONTESTED"
-		if p.myAxis < SectorOwnMax then sector = "OWN"
-		elseif p.myAxis >= SectorEnemyMin then sector = "ENEMY" end
+		if p.base and p.base[1] then
+			sector = (p.base[1] == team) and "OWN" or "ENEMY"
+		end
 		Context.FlagLabel[p.name] = { sector = sector, rank = rank, axis = p.myAxis,
 			x = p.x, y = p.y, nb = p.nb, base = p.base }
 		print("[AISPAWN] SECTOR pid=" .. tostring(pid) .. " team=" .. tostring(team)
