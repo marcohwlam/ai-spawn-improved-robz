@@ -83,4 +83,104 @@ LabelFlags(); PartitionFlags()
 local ownall_pick = PickGroupTarget(nil)
 eq(ownall_pick ~= nil, true, "own-all: tier2 still returns a target")
 
+-- === Task 1: FlagTier, preemption, ReorderGroup ===
+
+-- FlagTier matches the tier the inline classifier produced.
+Context.LostStamp = {}
+BotApi.Scene.Flags = bastogne({ f5 = "b", f10 = "b" })   -- f5 OWN-sector held by enemy
+LabelFlags(); PartitionFlags()
+eq(FlagTier("f5"), 1, "FlagTier: enemy on OWN flag is tier 1")
+eq(FlagTier("f10"), 3, "FlagTier: deep enemy flag is tier 3")
+eq(FlagTier("f2"), nil, "FlagTier: neutral flag with no LostStamp is not a candidate")
+
+-- Preemption: group 1 holding a tier-3 target switches when a tier-2 flag appears,
+-- and ReorderGroup re-issues CaptureFlag to the member squad.
+Context.LostStamp = {}
+Context.Groups = {}
+Context.SquadGroup = { s1 = 1 }
+Context.FieldUnits = { s1 = { unit = "x" } }
+BotApi.Scene.Flags = bastogne({ f10 = "b" })             -- only deep enemy -> tier 3
+LabelFlags(); PartitionFlags()
+Context.Groups[1] = { members = { s1 = true }, size = 5, target = "f10", pending = 0 }
+local captured = {}
+local realCapture = BotApi.Commands.CaptureFlag
+BotApi.Commands.CaptureFlag = function(_, squad, flag) captured[squad] = flag end
+-- f6 held by a (own base) makes f7 a frontier flag; enemy holds f7 -> tier 2.
+BotApi.Scene.Flags = bastogne({ f6 = "a", f7 = "b", f10 = "b" })
+LabelFlags(); PartitionFlags()
+UpdateGroupTargets()
+eq(Context.Groups[1].target, "f7", "preempt: tier3 f10 -> tier2 f7")
+eq(captured.s1, "f7", "ReorderGroup re-issued capture to member on switch")
+
+-- No preemption within the same tier: a closer tier-3 flag does not displace the
+-- current tier-3 target.
+Context.Groups = {}
+Context.SquadGroup = {}
+BotApi.Scene.Flags = bastogne({ f5 = "a", f1 = "b", f3 = "b" })   -- f1,f3 tier-3 enemy
+LabelFlags(); PartitionFlags()
+Context.Groups[1] = { members = {}, size = 5, target = "f3", pending = 0 }
+UpdateGroupTargets()
+eq(Context.Groups[1].target, "f3", "same-tier closer candidate does not preempt")
+BotApi.Commands.CaptureFlag = realCapture
+
+-- === Task 2: PickSubTarget ===
+
+-- Sub picks the objective nearest to the main target, excluding the main target.
+Context.LostStamp = {}
+BotApi.Scene.Flags = bastogne({ f5 = "a", f1 = "b", f3 = "b" })   -- f1,f3 are tier-3 objectives
+LabelFlags(); PartitionFlags()
+eq(PickSubTarget("f1"), "f3", "sub picks the other objective near main")
+
+-- Only one objective on the map: sub falls back to the main target.
+Context.LostStamp = {}
+BotApi.Scene.Flags = bastogne({ f10 = "b" })
+LabelFlags(); PartitionFlags()
+eq(PickSubTarget("f10"), "f10", "sub falls back to main target when no other objective")
+
+-- No main target: sub returns nil.
+eq(PickSubTarget(nil), nil, "sub returns nil without a main target")
+
+-- Sub follows main: when the main target changes, the sub re-picks the nearest
+-- remaining objective and re-orders its member.
+Context.LostStamp = {}
+Context.SquadGroup = { s2 = 2 }
+Context.FieldUnits = { s2 = { unit = "y" } }
+BotApi.Scene.Flags = bastogne({ f5 = "a", f1 = "b", f3 = "b" })
+LabelFlags(); PartitionFlags()
+Context.Groups = {}
+Context.Groups[1] = { members = {}, size = 5, target = "f1", pending = 0 }
+Context.Groups[2] = { members = { s2 = true }, size = 3, target = "f1", pending = 0 }
+local subCaptured = {}
+local realCap2 = BotApi.Commands.CaptureFlag
+BotApi.Commands.CaptureFlag = function(_, squad, flag) subCaptured[squad] = flag end
+UpdateGroupTargets()
+eq(Context.Groups[2].target, "f3", "sub retargets to the other objective near main")
+eq(subCaptured.s2, "f3", "sub re-orders its member on retarget")
+BotApi.Commands.CaptureFlag = realCap2
+
+-- === Task 3: ApportionArmor and ArmorTargetCount ===
+
+Context.Groups = { [1] = { members = {}, size = 5 }, [2] = { members = {}, size = 3 } }
+
+-- Late composition: armorTotal = heavy1 + medium1 = 2, split 5/3 -> main 1, sub 1.
+ApportionArmor({ targets = { heavy = 1, medium = 1, light = 2, rifle = 2, smg = 1 } })
+eq(Context.Groups[1].armorLead, 1, "late armor: main gets 1")
+eq(Context.Groups[2].armorLead, 1, "late armor: sub gets 1")
+
+-- Mid composition: armorTotal = 1 -> main 1, sub 0 (largest remainder gives the unit to main).
+ApportionArmor({ targets = { medium = 1, light = 2, rifle = 2, smg = 1 } })
+eq(Context.Groups[1].armorLead, 1, "mid armor: main gets 1")
+eq(Context.Groups[2].armorLead, 0, "mid armor: sub gets 0")
+
+-- Early composition: no armor target -> both 0.
+ApportionArmor({ targets = { light = 1, rifle = 3, smg = 1 } })
+eq(Context.Groups[1].armorLead, 0, "early: main armorLead 0")
+eq(Context.Groups[2].armorLead, 0, "early: sub armorLead 0")
+
+-- ArmorTargetCount rounds armorTotal / CycleSize * totalGroupCapacity (capacity 8 here).
+eq(ArmorTargetCount({ targets = { heavy = 1, medium = 1, light = 2, rifle = 2, smg = 1 } }), 2,
+	"late armor target count is 2")
+eq(ArmorTargetCount({ targets = { medium = 1, light = 2, rifle = 2, smg = 1 } }), 1,
+	"mid armor target count is 1")
+
 print("routing OK")

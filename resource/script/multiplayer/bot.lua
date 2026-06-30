@@ -106,8 +106,9 @@ function AdvanceClock()
 	Context.LastWall = now
 end
 
-local GroupSize = 8   -- target member count per group
-local MaxGroups = 1   -- live groups at a time (1 = single concentrated push; raise for more fronts)
+local MainGroupSize = 5   -- main prong member count
+local SubGroupSize  = 3   -- sub prong member count
+local MaxGroups = 2       -- main + sub prongs on adjacent flags
 
 -- Hard ceiling on this bot's OWN live squads (combat fill). The engine is 32-bit (~2GB);
 -- on team games every AI bot runs this script, so per-bot count multiplies. Aux counts 0.5
@@ -435,20 +436,106 @@ end
 -- Tag for per-bot attribution in shared game.log (multiple AI bots print to one file).
 function PidTag() return " pid=" .. tostring(BotApi.Instance.playerId) end
 
+-- Sum of live group sizes: the standing-army size the ratio targets are scaled to.
+function TotalGroupCapacity()
+	local n = 0
+	for i = 1, MaxGroups do
+		local g = Context.Groups[i]
+		if g then n = n + g.size end
+	end
+	return n
+end
+
+-- How many armor units the standing army should hold for this phase, scaled from
+-- the phase's armor share to the total group capacity.
+function ArmorTargetCount(phase)
+	local armorTotal = (phase.targets.heavy or 0) + (phase.targets.medium or 0)
+	local cap = TotalGroupCapacity()
+	if cap == 0 then return 0 end
+	return math.floor(armorTotal / CycleSize(phase) * cap + 0.5)
+end
+
+-- Distribute the phase's armor quota (heavy + medium target weights) across the live
+-- groups by the largest-remainder method on group size, writing g.armorLead. Each
+-- prong receives armor support rather than the main group taking all of it.
+function ApportionArmor(phase)
+	local armorTotal = (phase.targets.heavy or 0) + (phase.targets.medium or 0)
+	local groups, cap = {}, 0
+	for i = 1, MaxGroups do
+		local g = Context.Groups[i]
+		if g then groups[#groups + 1] = g; cap = cap + g.size end
+	end
+	if cap == 0 then return end
+	local fracs, assigned = {}, 0
+	for idx = 1, #groups do
+		local exact = armorTotal * groups[idx].size / cap
+		local f = math.floor(exact)
+		groups[idx].armorLead = f
+		fracs[idx] = exact - f
+		assigned = assigned + f
+	end
+	local remainder = armorTotal - assigned
+	while remainder > 0 do
+		local bestIdx, bestFrac = nil, -1
+		for idx = 1, #groups do
+			if fracs[idx] > bestFrac then bestFrac = fracs[idx]; bestIdx = idx end
+		end
+		groups[bestIdx].armorLead = groups[bestIdx].armorLead + 1
+		fracs[bestIdx] = -1
+		remainder = remainder - 1
+	end
+end
+
 -- Create groups: the 1st whenever none exist; the 2nd only once the 1st is full.
 function ManageGroups()
 	if not Context.Groups[1] then
 		local t = PickGroupTarget(nil)
-		Context.Groups[1] = { members = {}, size = GroupSize, target = t, pending = 0,
+		Context.Groups[1] = { members = {}, size = MainGroupSize, target = t, pending = 0,
 			phase = CurrentPhase(Elapsed()).name }
 		print("[AISPAWN] GROUP_NEW id=1 target=" .. tostring(t) .. PidTag())
 	elseif MaxGroups >= 2 and not Context.Groups[2]
 	   and GroupMemberCount(Context.Groups[1]) >= Context.Groups[1].size then
-		local t = PickGroupTarget(Context.Groups[1].target)
-		Context.Groups[2] = { members = {}, size = GroupSize, target = t, pending = 0,
+		local t = PickSubTarget(Context.Groups[1].target)
+		Context.Groups[2] = { members = {}, size = SubGroupSize, target = t, pending = 0,
 			phase = CurrentPhase(Elapsed()).name }
 		print("[AISPAWN] GROUP_NEW id=2 target=" .. tostring(t) .. PidTag())
 	end
+end
+
+-- Re-issue the capture order to every live member of a group immediately, so a
+-- target change takes effect without waiting for the OrderRotationPeriod timer.
+function ReorderGroup(gi)
+	local g = Context.Groups[gi]
+	if not g then return end
+	for squad in pairs(g.members) do
+		if BotApi.Scene:IsSquadExists(squad) then
+			CaptureFlag(squad)
+		end
+	end
+end
+
+-- The sub group's flag: the attackable objective nearest the main group's target
+-- (by flag coords), excluding the main target. Falls back to the main target when
+-- no other objective exists, so the sub never idles. nil when there is no main.
+function PickSubTarget(mainTarget)
+	if not mainTarget then return nil end
+	local mainLabel = Context.FlagLabel[mainTarget]
+	local best, bestKey
+	for _, flag in pairs(BotApi.Scene.Flags) do
+		local name = flag.name
+		if name ~= mainTarget and FlagTier(name) ~= nil then
+			local label = Context.FlagLabel[name]
+			local key = 1e18
+			if mainLabel and mainLabel.x and label and label.x then
+				local dx, dy = label.x - mainLabel.x, label.y - mainLabel.y
+				key = dx * dx + dy * dy
+			end
+			if not best or key < bestKey or (key == bestKey and name < best) then
+				best, bestKey = name, key
+			end
+		end
+	end
+	return best or mainTarget
 end
 
 -- Refresh each group's target: if nil or the flag is gone, re-pick de-conflicted from the other.
@@ -457,26 +544,33 @@ function UpdateGroupTargets()
 	local g2 = Context.Groups[2]
 	if g1 then
 		local other = g2 and g2.target
+		local newT
 		if not g1.target or not FlagAttackable(g1.target) then
-			local newT = PickGroupTarget(other)
-			if newT and newT ~= g1.target then
-				print("[AISPAWN] GROUP_TARGET id=1 target=" .. tostring(newT)
-					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority")
-					.. " tier=" .. tostring(Context.LastPickTier) .. PidTag())
+			newT = PickGroupTarget(other)
+		else
+			local cand = PickGroupTarget(other)
+			local ct = cand and FlagTier(cand)
+			local gt = FlagTier(g1.target)
+			if ct and gt and ct < gt then
+				newT = cand
 			end
+		end
+		if newT and newT ~= g1.target then
+			print("[AISPAWN] GROUP_TARGET id=1 target=" .. tostring(newT)
+				.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority")
+				.. " tier=" .. tostring(Context.LastPickTier) .. PidTag())
 			g1.target = newT
+			ReorderGroup(1)
 		end
 	end
 	if g2 then
-		local other = g1 and g1.target
-		if not g2.target or not FlagAttackable(g2.target) then
-			local newT = PickGroupTarget(other)
-			if newT and newT ~= g2.target then
-				print("[AISPAWN] GROUP_TARGET id=2 target=" .. tostring(newT)
-					.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority")
-					.. " tier=" .. tostring(Context.LastPickTier) .. PidTag())
-			end
+		local mainT = g1 and g1.target
+		local newT = PickSubTarget(mainT)
+		if newT and newT ~= g2.target then
+			print("[AISPAWN] GROUP_TARGET id=2 target=" .. tostring(newT)
+				.. " reason=sub" .. PidTag())
 			g2.target = newT
+			ReorderGroup(2)
 		end
 	end
 end
@@ -700,9 +794,9 @@ function GetUnitToSpawn(units)
 	end
 	if #pool == 0 then return nil end
 
-	-- Aux is separate from the four-tier ratio; it is injected on a fixed cycle.
-	local field
-	if g then field = CountByTier(g) else field = GetFieldCounts() end
+	-- Army-wide composition: the tier ratio is enforced across the whole force, not
+	-- per group, so splitting the force into prongs does not skew the ratio.
+	local field = GetFieldCounts()
 	local function collectAux()
 		local out = {}
 		for i, t in pairs(pool) do
@@ -739,15 +833,21 @@ function GetUnitToSpawn(units)
 		return t.priority * mul
 	end
 
-	-- Armor lead: at the wave's start, spawn the heaviest available armor tier first.
-	if Context.ArmorLead > 0 then
-		local lead = nil
-		if #byTier.heavy > 0 then lead = "heavy"
-		elseif #byTier.medium > 0 then lead = "medium" end
-		if lead then
-			return GetRandomItem(byTier[lead], weightOf)
+	-- Per-group armor lead, gated by the army-wide armor deficit. Front-loading leads
+	-- with armor at the wave start but stops once the army meets its armor target, so
+	-- surviving tanks across waves no longer crowd out infantry refills.
+	if g and (g.armorLead or 0) > 0 then
+		if (field.heavy + field.medium) < ArmorTargetCount(phase) then
+			local lead = nil
+			if #byTier.heavy > 0 then lead = "heavy"
+			elseif #byTier.medium > 0 then lead = "medium" end
+			if lead then
+				return GetRandomItem(byTier[lead], weightOf)
+			else
+				g.armorLead = 0 -- no armor available; resume normal selection
+			end
 		else
-			Context.ArmorLead = 0 -- no armor available; resume normal selection
+			g.armorLead = 0 -- armor already at target; resume normal selection
 		end
 	end
 
@@ -1200,8 +1300,8 @@ function AttemptSpawn(tag)
 			if Context.AuxOwed > 0 then Context.AuxOwed = Context.AuxOwed - 1 end
 		else
 			local utier = TierOf(unit)
-			if Context.ArmorLead > 0 and (utier == "heavy" or utier == "medium") then
-				Context.ArmorLead = Context.ArmorLead - 1
+			if g and (g.armorLead or 0) > 0 and (utier == "heavy" or utier == "medium") then
+				g.armorLead = g.armorLead - 1
 			end
 			Context.RatioCount = Context.RatioCount + 1
 			local phase = CurrentPhase(Elapsed())
@@ -1240,9 +1340,10 @@ function OnGameQuant()
 		Context.WaveRemaining = budget
 		Context.WaveFails = 0
 		Context.WaveCooldown = 0
-		-- Front-load the phase's armor quota (heaviest first) before the ratio picker.
-		Context.ArmorLead = (phase.targets.heavy or 0) + (phase.targets.medium or 0)
+		-- Build/refresh the groups, then split the phase's armor quota across them so
+		-- each prong leads with armor (front-load is gated by the army-wide deficit).
 		ManageGroups()
+		ApportionArmor(phase)
 		local ng = 0
 		for i = 1, MaxGroups do if Context.Groups[i] then ng = ng + 1 end end
 		print("[AISPAWN] WAVE mq=" .. tostring(Context.MatchQuants)
@@ -1452,37 +1553,56 @@ function NearestOwnedDist(label)
 	return best
 end
 
--- The group's attack flag, by a defensive-first tier ladder over candidates
--- (enemy-held flags + neutral flags we recently lost), excluding excludeName.
--- Tier 1: enemy holds/attacks an OWN-sector flag (home invaded; any lane).
--- Tier 2: a mine + frontier + CONTESTED flag the enemy holds/attacks (our lane's front).
--- Tier 3: everything else -> closest next flag (expand). Tier 3 is the catch-all, so this
--- returns nil only when no candidate exists. Sets Context.LastPickTier for logging.
-function PickGroupTarget(excludeName)
+-- Classify a flag into the attack tier ladder, or nil when it is not a valid
+-- candidate (not enemy-held and not a recently-lost neutral).
+-- Tier 1: enemy holds/attacks an OWN-sector flag (home invaded).
+-- Tier 2: a mine + frontier + CONTESTED flag the enemy holds (our lane front).
+-- Tier 3: every other enemy/attacked flag (expand).
+function FlagTier(name)
 	local team = BotApi.Instance.team
 	local enemy = BotApi.Instance.enemyTeam
+	local flag
+	for _, f in pairs(BotApi.Scene.Flags) do
+		if f.name == name then flag = f; break end
+	end
+	if not flag then return nil end
+	local held = flag.occupant == enemy
+	local attacking = flag.occupant ~= team and flag.occupant ~= enemy
+		and Context.LostStamp[name] ~= nil
+	if not (held or attacking) then return nil end
+	local label = Context.FlagLabel[name] or {}
+	local owner = Context.FlagOwner[name]
+	if label.sector == "OWN" then
+		return 1
+	elseif owner and owner.mine and label.sector == "CONTESTED" and IsFrontier(name) then
+		return 2
+	else
+		return 3
+	end
+end
+
+-- The group's attack flag, by the FlagTier ladder over candidates, excluding
+-- excludeName. Within a tier, lower key wins (tier 1/2 by lane axis, tier 3 by
+-- distance to our nearest owned flag, then recapture recency). Sets
+-- Context.LastPickTier for logging. Returns nil only when no candidate exists.
+function PickGroupTarget(excludeName)
 	local best
 	for _, flag in pairs(BotApi.Scene.Flags) do
 		local name = flag.name
 		if name ~= excludeName then
-			local held = flag.occupant == enemy
-			local attacking = flag.occupant ~= team and flag.occupant ~= enemy
-				and Context.LostStamp[name] ~= nil
-			if held or attacking then
+			local tier = FlagTier(name)
+			if tier then
 				local label = Context.FlagLabel[name] or {}
-				local owner = Context.FlagOwner[name]
-				local tier, key
-				if label.sector == "OWN" then
-					tier, key = 1, label.axis or 1
-				elseif owner and owner.mine and label.sector == "CONTESTED" and IsFrontier(name) then
-					tier, key = 2, label.axis or 1
+				local key
+				if tier == 1 or tier == 2 then
+					key = label.axis or 1
 				else
 					local d = NearestOwnedDist(label)
 					if d then
-						tier, key = 3, d
+						key = d
 					else
 						local stamp = Context.LostStamp[name]
-						tier, key = 3, (stamp and -stamp or (1e9 - GetFlagPriority(flag)))
+						key = (stamp and -stamp or (1e9 - GetFlagPriority(flag)))
 					end
 				end
 				if not best or tier < best.tier
