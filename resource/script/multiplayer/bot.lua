@@ -20,6 +20,7 @@ Context = {
 	LastNeutralTime = 0,  -- Elapsed() at last neutral-capper trickle
 	LastBackfillTime = 0, -- Elapsed() at last idle backfill
 	LastDefenderTime = 0, -- Elapsed() at last MG defender trickle
+	LastArtyTime = 0,     -- Elapsed() at last artillery defender trickle
 	LastOfficerTime = 0,  -- Elapsed() at last officer keep-alive
 	LastAtRifleTime = 0,  -- Elapsed() at last AT-rifle keep-alive
 	RatioCount = 0,    -- ratio (non-aux) units spawned since the last aux batch
@@ -67,6 +68,8 @@ local BackfillIntervalSec = 3    -- seconds between idle backfill spawns
 -- sent to dig in on owned flags. Only fires while idle and only when we hold ground.
 local DefenderIntervalSec = 20   -- seconds between defender checks
 local DefenderCap      = 3       -- max live MG teams the bot keeps fielded
+local ArtyIntervalSec  = 45      -- seconds between artillery trickle checks (rarer than MG)
+local ArtyCap          = 1       -- max live artillery pieces the bot keeps fielded
 
 -- Officer keep-alive: after OfficerUnlock seconds, keep up to OfficerCap officers parked
 -- at the spawn (no capture order) -- they hold the unit cap and must not die at the front.
@@ -282,6 +285,27 @@ function LiveMGCount()
 	local n = 0
 	for squadId, entry in pairs(Context.FieldUnits) do
 		if entry.class == UnitClass.MG then n = n + 1 end
+	end
+	return n
+end
+
+-- An artillery unit from the current faction roster, drawn by priority, or nil.
+function GetArtyUnit()
+	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]
+	if not roster then return nil end
+	local arty = {}
+	for i, t in pairs(roster) do
+		if t.class == UnitClass.ArtilleryTank then table.insert(arty, t) end
+	end
+	if #arty == 0 then return nil end
+	return GetRandomItem(arty, function(t) return t.priority end)
+end
+
+-- Live artillery pieces we have fielded (the artillery cap).
+function LiveArtyCount()
+	local n = 0
+	for squadId, entry in pairs(Context.FieldUnits) do
+		if entry.class == UnitClass.ArtilleryTank then n = n + 1 end
 	end
 	return n
 end
@@ -1069,6 +1093,7 @@ function OnGameStart()
 	Context.LastNeutralTime = 0
 	Context.LastBackfillTime = 0
 	Context.LastDefenderTime = 0
+	Context.LastArtyTime = 0
 	Context.LastOfficerTime = 0
 	Context.LastAtRifleTime = 0
 	Context.RatioCount = 0
@@ -1240,6 +1265,22 @@ function OnGameQuant()
 					Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "trickle", info = mg }
 				else
 					Context.FailCooldown[mg.unit] = Elapsed()
+				end
+				UpdateUnitToSpawn(Context.Purchase)
+			end
+		elseif Elapsed() - Context.LastArtyTime >= ArtyIntervalSec
+		and CurrentPhase(Elapsed()).name ~= "early"
+		and HeldFlagCount() > 0 and LiveArtyCount() < ArtyCap then
+			Context.LastArtyTime = Elapsed()
+			local art = GetArtyUnit()
+			if art then
+				Context.SpawnInfo = art -- routed as a defender (DefenderClasses[ArtilleryTank]=true)
+				local ok = BotApi.Commands:Spawn(art.unit, MaxSquadSize)
+				print("[AISPAWN] ARTY try=" .. tostring(art.unit) .. " ok=" .. tostring(ok))
+				if ok then
+					Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "trickle", info = art }
+				else
+					Context.FailCooldown[art.unit] = Elapsed()
 				end
 				UpdateUnitToSpawn(Context.Purchase)
 			end
