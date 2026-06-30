@@ -75,6 +75,10 @@ local DefenderIntervalSec = 20   -- seconds between defender checks
 local DefenderCap      = 3       -- max live MG teams the bot keeps fielded
 local ArtyIntervalSec  = 45      -- seconds between artillery trickle checks (rarer than MG)
 local ArtyCap          = 1       -- max live artillery pieces the bot keeps fielded
+-- Firing reach per artillery subtype, in flag_sectors.lua world units (reach = range x 10,
+-- see the 2026-06-29 placement design). Used to keep a piece on the REARMOST owned flag
+-- from which an enemy/contested target is already in range, so it never over-runs forward.
+local ArtyReach        = { rocket = 2200, field = 3000, heavy = 4000 }
 
 -- Officer keep-alive: after OfficerUnlock seconds, keep up to OfficerCap officers parked
 -- at the spawn (no capture order) -- they hold the unit cap and must not die at the front.
@@ -215,19 +219,39 @@ function DefenderFlagPriority(flag)
 	end
 end
 
--- Artillery defenders weight OWNED flags by forwardness, scaled to the piece's reach.
--- axis is team-oriented: low = own/rear, high = enemy/forward. Short rockets must sit
--- on the frontmost owned flag to reach the contested center; heavy artillery reaches
--- from the rear, so it favors a safer rear owned flag. Non-owned flags get only a
--- small drift weight so a piece with no owned flag in reach still moves forward.
+-- True if any enemy-held or contested flag lies within `reach` world units of (x, y).
+-- This is the "can I already fire on a target from here?" test that keeps artillery
+-- from advancing further than its range requires.
+function ArtyTargetInReach(x, y, reach)
+	if not x or not y then return false end
+	local r2 = reach * reach
+	for _, f in pairs(BotApi.Scene.Flags) do
+		local lab = Context.FlagLabel[f.name]
+		local isTarget = IsEnemyFlag(f) or (lab and lab.sector == "CONTESTED")
+		if isTarget and lab and lab.x and lab.y then
+			local dx, dy = lab.x - x, lab.y - y
+			if dx * dx + dy * dy <= r2 then return true end
+		end
+	end
+	return false
+end
+
+-- Artillery defenders pick the REARMOST owned flag from which an enemy-held or contested
+-- flag is already within firing reach -- so a piece advances only as far as it must and
+-- never over-runs to the front line where it gets killed. axis is team-oriented: low =
+-- own/rear, high = enemy/forward. If no owned flag has a target in reach (e.g. the piece
+-- out-ranges nothing from any held flag), fall back to a mild forward drift so it edges
+-- into range instead of sitting idle at base. Non-owned flags get only a tiny weight.
 function ArtilleryFlagPriority(flag, entry)
 	if not IsCapturedFlag(flag) then return 0.05 end
 	local label = Context.FlagLabel[flag.name]
 	local axis = (label and label.axis) or 0.5
 	local sub = entry and entry.arty
-	if sub == "rocket" then return 0.1 + 3.0 * axis
-	elseif sub == "heavy" then return 0.1 + 3.0 * (1 - axis)
-	else return 0.1 + 1.0 * axis end          -- field (and any untagged artillery): mild forward
+	local reach = ArtyReach[sub] or ArtyReach.field
+	if label and ArtyTargetInReach(label.x, label.y, reach) then
+		return 3.0 - axis          -- target in range: prefer the safest (rearmost) such flag
+	end
+	return 0.1 + 1.0 * axis        -- nothing in range yet: edge forward
 end
 
 function IsDefender(squad)
