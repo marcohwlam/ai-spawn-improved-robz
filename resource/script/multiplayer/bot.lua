@@ -62,7 +62,10 @@ local FailCooldownSec     = 10   -- seconds bench after a failed spawn
 
 -- Between waves the field still loses units; backfill trickles one spawn every
 -- BackfillInterval quants while idle to keep the composition near its ratio.
-local BackfillIntervalSec = 3    -- seconds between idle backfill spawns
+-- A quiet window after each wave start keeps backfill from merging into the wave
+-- and reading as one continuous infantry stream.
+local BackfillIntervalSec = 8    -- seconds between idle backfill spawns
+local BackfillQuietSec    = 30   -- seconds after a wave start before idle backfill may resume
 
 -- Between-wave defensive trickle: a small, capped number of mobile MG teams (mgs2)
 -- sent to dig in on owned flags. Only fires while idle and only when we hold ground.
@@ -1315,7 +1318,8 @@ function OnGameQuant()
 				end
 				UpdateUnitToSpawn(Context.Purchase)
 			end
-		elseif Elapsed() - Context.LastBackfillTime >= BackfillIntervalSec then
+		elseif Elapsed() - Context.LastWaveTime >= BackfillQuietSec
+		and Elapsed() - Context.LastBackfillTime >= BackfillIntervalSec then
 			Context.LastBackfillTime = Elapsed()
 			Context.FillGroup = GroupToFill()
 			if Context.FillGroup ~= nil and OwnedSquadCount() < CurrentSquadCap() then
