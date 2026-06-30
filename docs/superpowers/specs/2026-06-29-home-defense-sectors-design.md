@@ -111,9 +111,8 @@ distance metric stays the single geometric input.
 ### `adjacency` (changed)
 1. **Dedupe.** Build the per-base candidate sets as today (within `THRESH`, unioned with
    `KFLOOR` nearest). Then for any flag that ends up tagged for both `a` and `b`, keep only
-   the nearer side (min distance to that side's nearest base). Tie-break: the side whose raw
-   `axis` is more extreme for that flag (closer to 0 → a, closer to 1 → b); final tie-break
-   by flag name for determinism.
+   the nearer side by min distance to that side's nearest base. Exact-tie tie-break: team `a`
+   wins (`da <= db` → a), which is deterministic.
 2. **Trim to symmetric count.** `countA`, `countB` from the deduped sets. `N = min(countA,
    countB)`. Keep the `N` nearest flags to each side (by min distance to that side's bases),
    drop the rest. `assert N >= 1`.
