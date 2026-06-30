@@ -70,3 +70,36 @@ eq(DeepStrikeTarget(), "mainObjective", "no enemy base -> main group target")
 Context.Groups = {}
 eq(DeepStrikeTarget(), nil, "no base, no group -> nil")
 print("DeepStrikeTarget OK")
+
+-- CaptureFlag routes a tagged airborne squad to its DeepStrikeTarget.
+local routed = nil
+BotApi.Commands.CaptureFlag = function(_, squad, flagName) routed = flagName end
+Context.SquadGroup = {}
+Context.Cappers = {}
+Context.FieldUnits = {}
+Context.Groups = {}
+Context.AirborneSquads = { [21] = true }
+Context.FlagLabel = {
+	eDeep = { sector = "ENEMY", axis = 0.90 },
+	eNear = { sector = "ENEMY", axis = 0.60 },
+}
+BotApi.Scene.Flags = {
+	{ name = "eDeep", occupant = 2 },
+	{ name = "eNear", occupant = 2 },
+}
+routed = nil; CaptureFlag(21)
+eq(routed, "eDeep", "airborne routes to furthest enemy base")
+
+-- No enemy base and no group -> no order issued.
+BotApi.Scene.Flags = { { name = "eDeep", occupant = 1 }, { name = "eNear", occupant = 1 } }
+routed = "UNSET"; CaptureFlag(21)
+eq(routed, "UNSET", "airborne issues no order when target nil")
+print("CaptureFlag airborne routing OK")
+
+-- OnGameSpawn tags a kind=="airborne" spawn into AirborneSquads.
+Context.AirborneSquads = {}
+Context.SpawnQueue = { { kind = "airborne", info = { class = UnitClass.Airborne, unit = "elites_44_drop(ger)" } } }
+Context.SquadTimers = {}
+OnGameSpawn({ squadId = 31 })
+eq(Context.AirborneSquads[31], true, "OnGameSpawn tags airborne squad")
+print("OnGameSpawn airborne OK")

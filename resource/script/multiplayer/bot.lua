@@ -1618,6 +1618,7 @@ function OnGameQuant()
 			Context.SquadGroup[squadId] = nil
 			Context.FieldUnits[squadId] = nil
 			Context.Cappers[squadId] = nil
+			Context.AirborneSquads[squadId] = nil
 		end
 	end
 	PruneGroups()
@@ -1733,6 +1734,12 @@ function CaptureFlag(squad)
 		BotApi.Commands:CaptureFlag(squad, Context.Groups[gi].target)
 		return
 	end
+	-- Airborne deep-strike squads: drive at the deepest enemy base, then the main target.
+	if Context.AirborneSquads[squad] then
+		local name = DeepStrikeTarget()
+		if name and FlagAttackable(name) then BotApi.Commands:CaptureFlag(squad, name) end
+		return
+	end
 	-- Cappers chase neutral flags (trickle; never group members).
 	if Context.Cappers[squad] then
 		local flag = GetFlagToCapture(BotApi.Scene.Flags, CapperFlagPriority)
@@ -1792,6 +1799,8 @@ function OnGameSpawn(args)
 		g.seeded = true
 		g.pending = math.max(0, (g.pending or 0) - 1)
 		Context.SquadGroup[args.squadId] = d.slot
+	elseif d and d.kind == "airborne" then
+		Context.AirborneSquads[args.squadId] = true
 	end
 	-- Officers stay parked at the spawn (they hold the unit cap); everyone else gets a
 	-- capture order. Cappers rotate fast so they advance to the next flag after capping;
