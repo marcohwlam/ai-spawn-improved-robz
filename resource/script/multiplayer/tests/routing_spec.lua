@@ -61,11 +61,11 @@ LabelFlags(); PartitionFlags()
 eq(PickGroupTarget(nil), "f1", "tier3 picks the closer enemy flag")
 eq(Context.LastPickTier, 3, "f1 picked at tier 3")
 
--- Tier 2 (CONTESTED frontier) beats tier 3 (ENEMY): post-renorm coverage for f7.
--- f6 (axis=0.02, OWN for team a) held by team a makes f7 a frontier flag, because f6
--- is in f7.nb ({"f1","f2","f4","f6"}). f7 (axis=0.56) is CONTESTED (0.4 <= 0.56 < 0.6)
--- and falls in lateral band 1 (mine=true for playerId=1, teamSize=2). f10 (axis=1.00,
--- ENEMY) is also enemy-held but has no mine+CONTESTED+frontier qualification -> tier 3.
+-- Tier 2 (CONTESTED frontier) beats tier 3 (ENEMY). Under base-tag labeling:
+-- f6 is an a-base flag (OWN for team a); held by team a it makes f7 a frontier flag,
+-- because f6 is in f7.nb ({"f1","f2","f4","f6"}). f7 has no base tag -> CONTESTED, and
+-- falls in lateral band 1 (mine=true for playerId=1, teamSize=2). f10 is a b-base flag
+-- -> ENEMY for team a, with no mine+CONTESTED+frontier qualification -> tier 3.
 BotApi.Instance.playerId = 1
 Context.LostStamp = {}
 BotApi.Scene.Flags = bastogne({ f6 = "a", f7 = "b", f10 = "b" })

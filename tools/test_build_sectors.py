@@ -72,3 +72,14 @@ assert a_n == b_n and a_n >= 1, (a_n, b_n)
 comp = bs.compute(bases, flags)
 assert comp["f5"][2] < 0.4 and comp["f10"][2] > 0.59, (comp["f5"], comp["f10"])
 print("bastogne base+axis OK")
+
+# --- symmetric base count holds on ALL 4 shipped maps (not just bastogne) ---
+for _m in ["2v2_bastogne", "2v2_sidi_el-barrani", "1v1_nikolaev", "2v2_mamayev_kurgan"]:
+    with zipfile.ZipFile(PAK) as _z:
+        _t = _z.read("map/multi/%s/battle_zones.mi" % _m).decode("latin-1")
+    _b, _f = bs.parse_mi(_t)
+    _adj = bs.adjacency(_b, _f)
+    _a = sum(1 for n in _f if _adj[n][1] == ["a"])
+    _bb = sum(1 for n in _f if _adj[n][1] == ["b"])
+    assert _a == _bb and _a >= 1, (_m, _a, _bb)
+print("all-maps symmetric base count OK")
