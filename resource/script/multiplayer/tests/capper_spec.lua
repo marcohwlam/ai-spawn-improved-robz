@@ -53,4 +53,34 @@ BotApi.Instance.army = "no_such_army"
 local fb = GetCapperUnit()
 eq(fb, nil, "unknown army with no line roster falls back (nil here, no usable line unit)")
 
+-- FlagNeutralByName: true only while the named flag is neutral.
+BotApi.Instance.team = "a"; BotApi.Instance.enemyTeam = "b"
+BotApi.Scene.Flags = { flag("n", 0), flag("mine", "a"), flag("foe", "b") }
+eq(FlagNeutralByName("n"), true, "neutral flag -> true")
+eq(FlagNeutralByName("mine"), false, "our flag -> false")
+eq(FlagNeutralByName("foe"), false, "enemy flag -> false")
+eq(FlagNeutralByName("missing"), false, "absent flag -> false")
+print("FlagNeutralByName OK")
+
+-- Capper stays committed to its in-progress flag and does not switch mid-cap.
+local routed = nil
+BotApi.Commands.CaptureFlag = function(_, squad, name) routed = name end
+Context.SquadGroup = {}; Context.AirborneSquads = {}; Context.Groups = {}
+Context.FieldUnits = {}
+Context.Cappers = { [1] = true }
+Context.CapperTarget = { [1] = "cur" }
+Context.FlagLabel = { cur = { sector = "CONTESTED" }, other = { sector = "CONTESTED" } }
+Context.FlagOwner = { cur = { mine = true }, other = { mine = true } }
+-- Both neutral and in-lane (equal priority); the capper must keep "cur" while it is neutral.
+BotApi.Scene.Flags = { flag("cur", 0), flag("other", 0) }
+routed = nil; CaptureFlag(1)
+eq(routed, "cur", "capper sticks to its current flag while still neutral")
+
+-- Once "cur" is captured (ours), the capper re-picks the remaining neutral flag.
+BotApi.Scene.Flags = { flag("cur", "a"), flag("other", 0) }
+routed = nil; CaptureFlag(1)
+eq(routed, "other", "capper moves on only after the current flag is capped")
+eq(Context.CapperTarget[1], "other", "capper target updates on re-pick")
+print("capper stick OK")
+
 print("capper OK")

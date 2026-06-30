@@ -17,6 +17,7 @@ BotApi.Instance.team = "a"; BotApi.Instance.enemyTeam = "b"
 BotApi.Instance.teamSize = 2; BotApi.Instance.playerId = 1
 Context.MapName = "2v2_bastogne"
 Context.LostStamp = {}
+Context.GameClock = 240   -- past GroupHomeGraceSec: home recapture is active for the assertions below
 
 -- Tier 1: enemy holds an OWN-sector flag (f5 is OWN for team a) -> retaken first,
 -- even though enemy also holds a deep flag f10.
@@ -92,6 +93,15 @@ LabelFlags(); PartitionFlags()
 eq(FlagTier("f5"), 1, "FlagTier: enemy on OWN flag is tier 1")
 eq(FlagTier("f10"), 3, "FlagTier: deep enemy flag is tier 3")
 eq(FlagTier("f2"), nil, "FlagTier: neutral flag with no LostStamp is not a candidate")
+
+-- Home grace: in the first GroupHomeGraceSec, groups ignore OWN (home) flags entirely and
+-- push forward; the deep enemy flag is still a target. After the grace, home returns tier 1.
+Context.GameClock = 100   -- inside the grace window
+eq(FlagTier("f5"), nil, "FlagTier: OWN flag is NOT a group target during the home grace")
+eq(FlagTier("f10"), 3, "FlagTier: deep enemy flag still tier 3 during the grace")
+eq(PickGroupTarget(nil), "f10", "during grace, groups push to the deep flag, not home")
+Context.GameClock = 240   -- restore post-grace for the assertions that follow
+eq(FlagTier("f5"), 1, "FlagTier: OWN flag is tier 1 again after the grace")
 
 -- Preemption: group 1 holding a tier-3 target switches when a tier-2 flag appears,
 -- and ReorderGroup re-issues CaptureFlag to the member squad.
@@ -188,7 +198,7 @@ eq(ArmorTargetCount({ targets = { medium = 1, light = 2, rifle = 2, smg = 1 } })
 -- not only when the enemy fully owns it. The stamp makes FlagTier treat the own-sector
 -- flag as tier 1 immediately.
 BotApi.Instance.team = "a"; BotApi.Instance.enemyTeam = "b"
-Context.GameClock = 200
+Context.GameClock = 240
 Context.LostStamp = {}
 Context.PrevOwned = {}
 
@@ -201,7 +211,7 @@ eq(Context.PrevOwned["f6"], true, "TrackLostFlags: owned flag recorded as previo
 -- Tick 2: f6 drops to neutral (occupant 0) -> stamped at the current clock.
 BotApi.Scene.Flags = bastogne({})
 TrackLostFlags()
-eq(Context.LostStamp["f6"], 200, "TrackLostFlags: own->neutral stamps LostStamp now")
+eq(Context.LostStamp["f6"], 240, "TrackLostFlags: own->neutral stamps LostStamp now")
 
 -- A flag never owned (f2 stayed neutral both ticks) is not stamped.
 eq(Context.LostStamp["f2"], nil, "TrackLostFlags: never-owned neutral flag is not stamped")
