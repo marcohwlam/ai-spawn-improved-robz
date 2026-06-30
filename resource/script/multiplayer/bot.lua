@@ -75,6 +75,14 @@ local DefenderIntervalSec = 20   -- seconds between defender checks
 local DefenderCap      = 3       -- max live MG teams the bot keeps fielded
 local ArtyIntervalSec  = 45      -- seconds between artillery trickle checks (rarer than MG)
 local ArtyCap          = 1       -- max live artillery pieces the bot keeps fielded
+-- Firing reach per artillery subtype, in flag_sectors.lua world units (reach = range x 10,
+-- see the 2026-06-29 placement design). Used to keep a piece on the REARMOST owned flag
+-- from which an enemy/contested target is already in range, so it never over-runs forward.
+local ArtyReach        = { rocket = 2200, field = 3000, heavy = 4000 }
+-- A piece never sits closer than this to its nearest target: the safe-band lower bound.
+-- A flag qualifies as a firing position only when its nearest target distance is in
+-- [ArtySafeMin, reach]. No qualifying flag => the piece stays parked at base, unexposed.
+local ArtySafeMin      = 1500    -- world units; standoff floor from the nearest enemy fire
 
 -- Officer keep-alive: after OfficerUnlock seconds, keep up to OfficerCap officers parked
 -- at the spawn (no capture order) -- they hold the unit cap and must not die at the front.
@@ -215,19 +223,50 @@ function DefenderFlagPriority(flag)
 	end
 end
 
--- Artillery defenders weight OWNED flags by forwardness, scaled to the piece's reach.
--- axis is team-oriented: low = own/rear, high = enemy/forward. Short rockets must sit
--- on the frontmost owned flag to reach the contested center; heavy artillery reaches
--- from the rear, so it favors a safer rear owned flag. Non-owned flags get only a
--- small drift weight so a piece with no owned flag in reach still moves forward.
+-- Distance to the nearest enemy-held or contested flag from (x, y), or nil if there are
+-- no targets or no coords. The firing-position test below reads this distance directly.
+function ArtyNearestTarget(x, y)
+	if not x or not y then return nil end
+	local best = nil
+	for _, f in pairs(BotApi.Scene.Flags) do
+		local lab = Context.FlagLabel[f.name]
+		local isTarget = IsEnemyFlag(f) or (lab and lab.sector == "CONTESTED")
+		if isTarget and lab and lab.x and lab.y then
+			local dx, dy = lab.x - x, lab.y - y
+			local d = math.sqrt(dx * dx + dy * dy)
+			if not best or d < best then best = d end
+		end
+	end
+	return best
+end
+
+-- Score an OWNED flag as an artillery firing position. A flag qualifies only when its
+-- nearest target sits inside the safe band [ArtySafeMin, reach]: far enough that the
+-- piece is not overrun by enemy fire, near enough to actually hit. Among qualifying flags
+-- the rearmost (lowest team-axis) scores highest, so a piece sits as far back as it can
+-- while still reaching a target. A non-qualifying flag scores 0 -- the router then parks
+-- the piece at base rather than sending it somewhere too exposed or out of range.
 function ArtilleryFlagPriority(flag, entry)
-	if not IsCapturedFlag(flag) then return 0.05 end
+	if not IsCapturedFlag(flag) then return 0 end
 	local label = Context.FlagLabel[flag.name]
-	local axis = (label and label.axis) or 0.5
+	if not label then return 0 end
 	local sub = entry and entry.arty
-	if sub == "rocket" then return 0.1 + 3.0 * axis
-	elseif sub == "heavy" then return 0.1 + 3.0 * (1 - axis)
-	else return 0.1 + 1.0 * axis end          -- field (and any untagged artillery): mild forward
+	local reach = ArtyReach[sub] or ArtyReach.field
+	local d = ArtyNearestTarget(label.x, label.y)
+	if not d or d < ArtySafeMin or d > reach then return 0 end
+	return 3.0 - (label.axis or 0.5)
+end
+
+-- The owned flag an artillery piece should hold, or nil to stay parked at base. Picks the
+-- highest-scoring (rearmost qualifying) flag deterministically; ties break toward the
+-- first scanned, which is good enough since equal scores mean equal safety.
+function ArtilleryTargetFlag(entry)
+	local best, bestK = nil, 0
+	for _, f in pairs(BotApi.Scene.Flags) do
+		local k = ArtilleryFlagPriority(f, entry)
+		if k > bestK then best, bestK = f.name, k end
+	end
+	return best
 end
 
 function IsDefender(squad)
@@ -1649,11 +1688,15 @@ function CaptureFlag(squad)
 	-- priority so each piece sits where its reach covers the contested center.
 	if IsDefender(squad) then
 		local entry = Context.FieldUnits[squad]
-		local priFn = DefenderFlagPriority
 		if entry and entry.class == UnitClass.ArtilleryTank then
-			priFn = function(flag) return ArtilleryFlagPriority(flag, entry) end
+			-- Artillery holds the rearmost owned flag in its safe band, or stays parked
+			-- at base (no order) when no held flag is both in range and far enough from
+			-- enemy fire -- never advances into a position where it gets killed.
+			local name = ArtilleryTargetFlag(entry)
+			if name then BotApi.Commands:CaptureFlag(squad, name) end
+			return
 		end
-		local flag = GetFlagToCapture(BotApi.Scene.Flags, priFn)
+		local flag = GetFlagToCapture(BotApi.Scene.Flags, DefenderFlagPriority)
 		if flag then BotApi.Commands:CaptureFlag(squad, flag.name) end
 		return
 	end
