@@ -3,14 +3,16 @@ dofile((arg[0]:gsub("integration_spec%.lua$", "harness.lua")))
 
 -- Synthetic roster spanning all tiers.
 local units = {
-	{ class = UnitClass.Infantry,  unit = "rifle",   priority = 2.0, recharge = 0 },
-	{ class = UnitClass.Vehicle,   unit = "halftrk", priority = 1.0, recharge = 30 },
-	{ class = UnitClass.Tank,      unit = "lighttk", priority = 1.5, weight = "light" },  -- light
-	{ class = UnitClass.Tank,      unit = "medtk",   priority = 1.5, weight = "medium" }, -- medium
-	{ class = UnitClass.HeavyTank, unit = "heavytk", priority = 1.0, recharge = 2000 }, -- heavy
+	{ class = UnitClass.Infantry,  unit = "rifle",   priority = 2.0 },
+	{ class = UnitClass.Vehicle,   unit = "halftrk", priority = 1.0 },
+	{ class = UnitClass.Tank,      unit = "lighttk", priority = 1.5, weight = "light" },             -- light, always available
+	{ class = UnitClass.Tank,      unit = "medtk",   priority = 1.5, weight = "medium", unlock = 300 },
+	{ class = UnitClass.HeavyTank, unit = "heavytk", priority = 1.0, unlock = 1500 },
 }
 
--- EARLY phase (MatchQuants=0 -> t=0 -> armorCap=light). Medium/heavy must never be chosen.
+-- EARLY phase: pin clock to t=0 so unlock gate excludes medtk (unlock=300) and heavytk (unlock=1500).
+Context.QuantsPerSec = 1
+Context.MatchQuants = 0
 local seenEarly = {}
 for i = 1, 200 do
 	local pick = GetUnitToSpawn(units)
@@ -20,5 +22,5 @@ end
 assert(not seenEarly["medtk"],   "EARLY must not spawn medium tank")
 assert(not seenEarly["heavytk"], "EARLY must not spawn heavy tank")
 assert(seenEarly["rifle"] or seenEarly["halftrk"] or seenEarly["lighttk"], "EARLY spawns inf/light")
-print("integration EARLY armorCap OK")
+print("integration EARLY unlock-gate OK")
 print("integration OK")

@@ -619,12 +619,11 @@ function GetUnitToSpawn(units)
 	local enemyHasTanks = BotApi.Commands:EnemyHasTanks()
 	local elapsed = Elapsed()
 	local phase = CurrentPhase(elapsed)
-	local capRank = TierRank[phase.armorCap]
 
 	-- Resolve fill group for per-group field counts and elite cap.
 	local g = Context.FillGroup and Context.Groups[Context.FillGroup]
 
-	-- Build the eligible pool: affordable, unlocked, and within the phase armor cap.
+	-- Build the eligible pool: affordable, unlocked, and within the phase composition targets.
 	local pool = {}
 	for i, unit in pairs(units) do
 		local affordable = teamSize >= (unit.min_team or 0)
@@ -634,14 +633,13 @@ function GetUnitToSpawn(units)
 		local notRecentlyFailed = (failed == nil)
 			or (Context.MatchQuants - failed >= Q(FailCooldownSec))
 		local tier = TierOf(unit)
-		local capOk = (tier == nil) or (TierRank[tier] <= capRank) -- aux not capped
 		local phaseOk = (unit.phase == nil) or (unit.phase == phase.name) -- per-unit phase lock
 		-- Elite infantry only spawns in early. From mid on, tanks dominate the field and
 		-- elite inf just feeds them, so ban elite outside early. In early, still cap at 1/group.
 		local elitePhaseOk = (not unit.elite) or (phase.name == "early")
 		local eliteCapOk = not (g and unit.elite and GroupEliteCount(g) >= 1)
 		local eliteOk = elitePhaseOk and eliteCapOk
-		if affordable and unlockOk and notRecentlyFailed and capOk and phaseOk and eliteOk then
+		if affordable and unlockOk and notRecentlyFailed and phaseOk and eliteOk then
 			table.insert(pool, unit)
 		end
 	end
