@@ -12,6 +12,7 @@ Context = {
 		isRare = false,
 	},
 	Cappers = {},      -- squadId -> true, cheap line units sent to grab neutral flags
+	CapperTarget = {}, -- squadId -> flag name the capper is committed to until it is capped or lost
 	LastWaveTime = 0,     -- Elapsed() at last wave start
 	WaveRemaining = 0, -- units left to attempt in the current wave (0 = idle)
 	WaveFails = 0,     -- consecutive failed Spawns this wave (MP-spent detector)
@@ -58,6 +59,7 @@ local CapperCap       = 2       -- max live single-soldier cappers (prevents sta
 -- Cappers re-pick their target far faster than the standard 3-minute rotation so a capper
 -- rolls on to the next neutral flag right after taking one, instead of idling on it.
 local CapperRotationPeriod = 15 * 1000 -- ms between capper target re-picks
+local GroupHomeGraceSec = 240 -- first N seconds: groups ignore OWN-sector (home) flags and push forward
 
 -- When a Spawn fails (usually the picked unit is unaffordable right now), bench
 -- that unit for FailCooldownSec seconds so the picker falls through to a cheaper tier
@@ -210,6 +212,15 @@ function IsEnemyFlag(flag)    return flag.occupant == BotApi.Instance.enemyTeam 
 function IsNeutralFlag(flag)
 	return flag.occupant ~= BotApi.Instance.team
 	   and flag.occupant ~= BotApi.Instance.enemyTeam
+end
+
+-- True if the named flag exists and is currently neutral (capture in progress, not yet
+-- ours and not taken by the enemy). Used to keep a capper committed to its flag.
+function FlagNeutralByName(name)
+	for _, f in pairs(BotApi.Scene.Flags) do
+		if f.name == name then return IsNeutralFlag(f) end
+	end
+	return false
 end
 
 function GetFlagPriority(flag)
@@ -1346,6 +1357,7 @@ function OnGameStart()
 	Context.RatioCount = 0
 	Context.AuxOwed = 0
 	Context.Cappers = {}
+	Context.CapperTarget = {}
 	Context.SpawnQueue = {}
 	Context.FailCooldown = {}
 	Context.PrevOwned = {}
@@ -1662,6 +1674,7 @@ function OnGameQuant()
 			Context.SquadGroup[squadId] = nil
 			Context.FieldUnits[squadId] = nil
 			Context.Cappers[squadId] = nil
+			Context.CapperTarget[squadId] = nil
 			Context.AirborneSquads[squadId] = nil
 		end
 	end
@@ -1726,6 +1739,10 @@ function FlagTier(name)
 	local label = Context.FlagLabel[name] or {}
 	local owner = Context.FlagOwner[name]
 	if label.sector == "OWN" then
+		-- First 4 minutes: groups do not pull back to recapture home flags; they push
+		-- forward and leave home defense to cappers/defenders. After the grace, home
+		-- recapture resumes at top priority.
+		if Elapsed() < GroupHomeGraceSec then return nil end
 		return 1
 	elseif owner and owner.mine and label.sector == "CONTESTED" and IsFrontier(name) then
 		return 2
@@ -1786,8 +1803,20 @@ function CaptureFlag(squad)
 	end
 	-- Cappers chase neutral flags (trickle; never group members).
 	if Context.Cappers[squad] then
+		-- Stay committed to the current flag while it is still neutral (capture unfinished
+		-- and not lost to the enemy), so a re-pick never pulls the capper off a flag it is
+		-- mid-way through capping. Only choose a new flag once the current one is captured,
+		-- lost, or unset.
+		local cur = Context.CapperTarget[squad]
+		if cur and FlagNeutralByName(cur) then
+			BotApi.Commands:CaptureFlag(squad, cur)
+			return
+		end
 		local flag = GetFlagToCapture(BotApi.Scene.Flags, CapperFlagPriority)
-		if flag then BotApi.Commands:CaptureFlag(squad, flag.name) end
+		if flag then
+			Context.CapperTarget[squad] = flag.name
+			BotApi.Commands:CaptureFlag(squad, flag.name)
+		end
 		return
 	end
 	-- Defenders (MG, AT, sniper, etc.) hold owned flags. Artillery uses a range-aware
