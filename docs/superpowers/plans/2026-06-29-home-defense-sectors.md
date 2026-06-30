@@ -92,9 +92,10 @@ def _synthetic_trim():
     return bases, flags
 
 def _synthetic_overlap():
-    # KFLOOR forces f2 into both bases' nearest-2; f2 is nearer a (1000 < 1100)
+    # f2 and f3 land in both bases' tag sets; dedupe sends f2->a (1000<1100),
+    # f3->b (200<1900). Counts are symmetric (2/2) so pure trim keeps f2.
     bases = {"a1": (-1000, 0), "b1": (1100, 0)}
-    flags = {"f1": (-900, 0), "f2": (0, 0), "f3": (900, 0)}
+    flags = {"f1": (-900, 0), "f2": (0, 0), "f3": (900, 0), "f4": (1000, 0)}
     return bases, flags
 
 b, f = _synthetic_trim()
@@ -108,10 +109,11 @@ assert set(b_set) == {"f3", "f4"}, b_set                  # f5 trimmed (farthest
 
 b, f = _synthetic_overlap()
 adj = bs.adjacency(b, f)
-assert adj["f2"][1] == ["a"], adj["f2"][1]                # dedupe: nearer side a
+assert adj["f2"][1] == ["a"], adj["f2"][1]                # dedupe: f2 -> nearer side a
+assert adj["f3"][1] == ["b"], adj["f3"][1]                # dedupe: f3 -> nearer side b
 a_set = [n for n in f if adj[n][1] == ["a"]]
 b_set = [n for n in f if adj[n][1] == ["b"]]
-assert len(a_set) == len(b_set) == 1, (a_set, b_set)      # trim to min
+assert len(a_set) == len(b_set) == 2, (a_set, b_set)      # symmetric, f2 survives trim
 print("dedupe+trim test OK")
 ```
 
@@ -147,9 +149,9 @@ Replace the base block in `adjacency` (currently lines 63-70, ending before the 
             base[n] = {"a"} if da <= db else {"b"}
     # trim: keep N = min(countA, countB) nearest flags per side
     a_flags = sorted((n for n in names if base[n] == {"a"}),
-                     key=lambda n: _side_dist(flags, bases, n, "a"))
+                     key=lambda n: (_side_dist(flags, bases, n, "a"), n))
     b_flags = sorted((n for n in names if base[n] == {"b"}),
-                     key=lambda n: _side_dist(flags, bases, n, "b"))
+                     key=lambda n: (_side_dist(flags, bases, n, "b"), n))
     N = min(len(a_flags), len(b_flags))
     assert N >= 1, "a side or b side has no base flag"
     keep = set(a_flags[:N]) | set(b_flags[:N])
