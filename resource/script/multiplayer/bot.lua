@@ -1329,6 +1329,8 @@ function OnGameStart()
 	Context.LastBackfillTime = 0
 	Context.LastDefenderTime = 0
 	Context.LastArtyTime = 0
+	Context.LastDeepStrikeTime = 0
+	Context.AirborneSquads = {}
 	Context.LastOfficerTime = 0
 	Context.LastAtRifleTime = 0
 	Context.RatioCount = 0
@@ -1426,6 +1428,29 @@ function TrackLostFlags()
 			Context.LostStamp[flag.name] = Elapsed()
 		end
 		Context.PrevOwned[flag.name] = ownedNow
+	end
+end
+
+-- Late-game comeback: when the enemy holds more than DeepStrikePct of all flags, drop an
+-- elite airborne squad on its own cooldown (capped). The squad is queued as kind="airborne"
+-- so OnGameSpawn tags it for the deep-strike router instead of a group. Mirrors the MG/arty
+-- trickle shape; runs as an independent trickle because its trigger differs from theirs.
+function DeepStrikeTrickle()
+	if Elapsed() - Context.LastDeepStrikeTime < DeepStrikeIntervalSec then return end
+	if CurrentPhase(Elapsed()).name ~= "late" then return end
+	if EnemyFlagPct() <= DeepStrikePct then return end
+	if LiveAirborneCount() >= DeepStrikeCap then return end
+	local u = GetAirborneUnit()
+	if not u then return end
+	Context.LastDeepStrikeTime = Elapsed()
+	Context.SpawnInfo = u
+	local ok = BotApi.Commands:Spawn(u.unit, MaxSquadSize)
+	print("[AISPAWN] DEEPSTRIKE try=" .. tostring(u.unit) .. " ok=" .. tostring(ok)
+		.. " pct=" .. string.format("%.2f", EnemyFlagPct()))
+	if ok then
+		Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "airborne", info = u }
+	else
+		Context.FailCooldown[u.unit] = Elapsed()
 	end
 end
 
@@ -1610,6 +1635,8 @@ function OnGameQuant()
 			end
 		end
 	end
+
+	DeepStrikeTrickle()
 
 	for squadId in pairs(Context.FieldUnits) do
 		if not BotApi.Scene:IsSquadExists(squadId) then
