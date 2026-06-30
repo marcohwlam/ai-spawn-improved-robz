@@ -546,12 +546,30 @@ function AuxEligible(t, enemyHasTanks)
 	end
 end
 
+-- Build a faction-resolved phase array from the global Phases template: apply this
+-- faction's mid/late boundaries and (Japan) its late targets, keeping the shared
+-- budget/waveMult/squadCap. Returns the global Phases table unchanged when the faction
+-- has no entry. Pure: depends only on its argument and the module-level Phases/FactionPhases.
+function ResolvePhases(army)
+	local fp = FactionPhases and FactionPhases[army]
+	if not fp then return Phases end
+	return {
+		{ name = "early", upto = fp.mid, targets = Phases[1].targets,
+		  budget = Phases[1].budget, waveMult = Phases[1].waveMult, squadCap = Phases[1].squadCap },
+		{ name = "mid", upto = fp.late, targets = Phases[2].targets,
+		  budget = Phases[2].budget, waveMult = Phases[2].waveMult, squadCap = Phases[2].squadCap },
+		{ name = "late", upto = 1000000000, targets = fp.lateTargets or Phases[3].targets,
+		  budget = Phases[3].budget, waveMult = Phases[3].waveMult, squadCap = Phases[3].squadCap },
+	}
+end
+
 -- Pick the active phase for an elapsed time in seconds.
 function CurrentPhase(elapsedSec)
-	for i = 1, #Phases do
-		if elapsedSec < Phases[i].upto then return Phases[i] end
+	local phases = Context.Phases or Phases
+	for i = 1, #phases do
+		if elapsedSec < phases[i].upto then return phases[i] end
 	end
-	return Phases[#Phases]
+	return phases[#phases]
 end
 
 -- Choose the tier whose share is furthest below its target, among phase-allowed tiers
@@ -1054,6 +1072,7 @@ function OnGameStart()
 	math.randomseed(os.time() * BotApi.Instance.hostId)
 	math.random() math.random() math.random()
 	Context.Purchase = PIter:new(Purchases)
+	Context.Phases = ResolvePhases(BotApi.Instance.army)
 	Context.LastWaveTime = 0
 	Context.MatchQuants = 0
 	Context.StartTime = os.time()

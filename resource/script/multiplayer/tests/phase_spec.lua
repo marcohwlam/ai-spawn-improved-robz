@@ -108,3 +108,42 @@ do
 	BotApi.Instance    = savedInst
 end
 print("PickGroupTarget OK")
+
+-- ResolvePhases: per-faction boundaries; budget/waveMult/squadCap stay global.
+local ger = ResolvePhases("ger")
+eq(ger[1].name, "early", "ger p1 is early")
+eq(ger[1].upto, 630,        "ger early ends at first medium 630")
+eq(ger[2].upto, 1500,       "ger mid ends at first heavy 1500")
+eq(ger[3].upto, 1000000000, "ger late is open-ended")
+eq(ger[1].budget,   Phases[1].budget,   "ger early budget shared with global")
+eq(ger[2].waveMult, Phases[2].waveMult, "ger mid waveMult shared with global")
+eq(ger[3].squadCap, Phases[3].squadCap, "ger late squadCap shared with global")
+eq(ger[3].targets.heavy, 1, "ger keeps global late targets (heavy present)")
+
+local usa = ResolvePhases("usa")
+eq(usa[1].upto, 530,  "usa early ends at 530")
+eq(usa[2].upto, 1200, "usa mid ends at 1200")
+
+-- eng: first heavy (820) is below first medium (750) + 300 floor, so floor governs.
+local eng = ResolvePhases("eng")
+eq(eng[2].upto, 1050, "eng mid->late uses the 300s floor (1050), not 820")
+
+-- jap: no heavy tier -> late targets drop heavy and boost medium.
+local jap = ResolvePhases("jap")
+eq(jap[1].upto, 580,  "jap early ends at 580")
+eq(jap[2].upto, 1380, "jap mid ends at chi-to 1380")
+eq(jap[3].targets.heavy,  nil, "jap late has no heavy target")
+eq(jap[3].targets.medium, 2,   "jap late medium boosted to 2")
+
+-- unknown faction -> global Phases table (identity fallback).
+assert(ResolvePhases("nonexistent") == Phases, "unknown army returns the global Phases table")
+print("ResolvePhases OK")
+
+-- CurrentPhase reads Context.Phases when set, falls back to global Phases when nil.
+Context.Phases = ResolvePhases("jap")
+eq(CurrentPhase(500).name,  "early", "jap 500 is early (< 580)")
+eq(CurrentPhase(600).name,  "mid",   "jap 600 is mid (>= 580, < 1380)")
+eq(CurrentPhase(1400).name, "late",  "jap 1400 is late (>= 1380)")
+Context.Phases = nil
+eq(CurrentPhase(180).name, "mid", "fallback to global Phases when Context.Phases is nil")
+print("CurrentPhase faction OK")

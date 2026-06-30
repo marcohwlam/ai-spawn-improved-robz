@@ -32,6 +32,25 @@ Phases = {
 	{ name = "late",  upto = 1000000000, targets = { heavy = 1, medium = 1, light = 2, rifle = 3, smg = 1 }, budget = 32, waveMult = 2.25, squadCap = 28 },
 }
 
+-- Per-faction phase boundaries (seconds), anchored to real RobZ unlock times.
+--   early -> mid = faction's first medium unlock.
+--   mid   -> late = max(first HeavyTank-class unlock, first medium + 300s floor).
+-- The 300s floor only binds eng (820 -> 1050) and rus (830 -> 1050), whose heavies
+-- unlock right after their mediums. Japan has no HeavyTank unit, so its late anchors
+-- to chi-to (1380) and its late composition drops the heavy tier (see lateTargets).
+-- budget/waveMult/squadCap are NOT here; they stay shared on the global Phases template.
+FactionPhases = {
+	["eng"]       = { mid = 750, late = 1050 },
+	["ger"]       = { mid = 630, late = 1500 },
+	["ger_ss"]    = { mid = 630, late = 1500 },
+	["usa"]       = { mid = 530, late = 1200 },
+	["rus"]       = { mid = 750, late = 1050 },
+	["jap"]       = { mid = 580, late = 1380,
+	                  lateTargets = { medium = 2, light = 2, rifle = 3, smg = 1 } },
+	["ger2"]      = { mid = 630, late = 1750 },
+	["rus_guard"] = { mid = 750, late = 1240 },
+}
+
 Purchases = {
 
 	{--single full roster, infinite (category-driven selection)
