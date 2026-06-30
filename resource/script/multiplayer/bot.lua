@@ -1300,18 +1300,25 @@ function AttemptSpawn(tag)
 	if ok then return "ok" else return "fail" end
 end
 
-function OnGameQuant()
-	Context.MatchQuants = Context.MatchQuants + 1
-	AdvanceClock()
-
-	-- Track flags we just lost (were ours last tick, now enemy) for recapture priority.
+-- Stamp flags we just lost (ours last tick, now no longer ours) with the loss time.
+-- Triggers on owned->neutral (enemy mid-capture), not only owned->enemy, so FlagTier
+-- can escalate an own-sector flag to tier 1 before the enemy finishes capturing it.
+function TrackLostFlags()
 	for i, flag in pairs(BotApi.Scene.Flags) do
 		local ownedNow = (flag.occupant == BotApi.Instance.team)
-		if Context.PrevOwned[flag.name] and flag.occupant == BotApi.Instance.enemyTeam then
+		if Context.PrevOwned[flag.name] and not ownedNow then
 			Context.LostStamp[flag.name] = Elapsed()
 		end
 		Context.PrevOwned[flag.name] = ownedNow
 	end
+end
+
+function OnGameQuant()
+	Context.MatchQuants = Context.MatchQuants + 1
+	AdvanceClock()
+
+	-- Stamp flags we just lost so FlagTier can prioritise recapture (see TrackLostFlags).
+	TrackLostFlags()
 
 	-- Refresh group targets each quant (re-pick if gone or nil).
 	UpdateGroupTargets()
