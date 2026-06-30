@@ -63,3 +63,28 @@ assert "f1" in adj["f8"][0], adj["f8"][0]
 # base adjacency: f5/f6 sit near a-side; at least one flag lists team 'a'
 assert any("a" in adj[n][1] for n in flags), "some flag should be a-base adjacent"
 print("adjacency test OK")
+
+# --- two-point renorm (synthetic) ---
+b, f = _synthetic_trim()
+comp = bs.compute(b, f)
+adj = bs.adjacency(b, f)
+rn = bs.renorm(comp, adj)
+# a-base flags (f1,f2) -> axis' near 0 (OWN for team a)
+assert rn["f1"][2] < 0.4 and rn["f2"][2] < 0.4, (rn["f1"], rn["f2"])
+# b-base flags (f3,f4) -> axis' near 1 (OWN for team b: 1-axis' < 0.4)
+assert rn["f3"][2] > 0.6 and rn["f4"][2] > 0.6, (rn["f3"], rn["f4"])
+# clamp range
+assert all(0.0 <= rn[n][2] <= 1.0 for n in f)
+print("renorm synthetic OK")
+
+# crossed anchors -> SystemExit. adjacency() dedupe always assigns a-flags to
+# axis<0.5 and b-flags to axis>0.5, so the guard is only reachable by handing
+# renorm a crossed (comp, adj) directly: a-base axis 0.8 > b-base axis 0.2.
+_crossed_comp = {"fa": (0, 0, 0.8), "fb": (0, 0, 0.2)}
+_crossed_adj = {"fa": ([], ["a"]), "fb": ([], ["b"])}
+try:
+    bs.renorm(_crossed_comp, _crossed_adj)
+    raise AssertionError("expected SystemExit on crossed anchors")
+except SystemExit:
+    pass
+print("renorm crossed-guard OK")
