@@ -20,6 +20,8 @@ Context = {
 	LastBackfillTime = 0, -- Elapsed() at last idle backfill
 	LastDefenderTime = 0, -- Elapsed() at last MG defender trickle
 	LastArtyTime = 0,     -- Elapsed() at last artillery defender trickle
+	LastDeepStrikeTime = 0, -- Elapsed() at last airborne deep-strike drop
+	AirborneSquads = {},    -- squadId -> true, elite airborne squads sent at enemy bases
 	LastOfficerTime = 0,  -- Elapsed() at last officer keep-alive
 	LastAtRifleTime = 0,  -- Elapsed() at last AT-rifle keep-alive
 	RatioCount = 0,    -- ratio (non-aux) units spawned since the last aux batch
@@ -75,6 +77,9 @@ local DefenderIntervalSec = 20   -- seconds between defender checks
 local DefenderCap      = 3       -- max live MG teams the bot keeps fielded
 local ArtyIntervalSec  = 45      -- seconds between artillery trickle checks (rarer than MG)
 local ArtyCap          = 1       -- max live artillery pieces the bot keeps fielded
+local DeepStrikePct        = 0.65   -- trigger deep-strike when enemy holds > this share of all flags
+local DeepStrikeIntervalSec = 180   -- seconds between airborne drops (frontline-equivalent of c(900) x 0.2)
+local DeepStrikeCap        = 2      -- max live airborne squads kept fielded
 -- Firing reach per artillery subtype, in flag_sectors.lua world units (reach = range x 10,
 -- see the 2026-06-29 placement design). Used to keep a piece on the REARMOST owned flag
 -- from which an enemy/contested target is already in range, so it never over-runs forward.
@@ -269,6 +274,26 @@ function ArtilleryTargetFlag(entry)
 	return best
 end
 
+-- The flag an airborne deep-strike squad should attack: the FURTHEST enemy-held flag in
+-- the enemy base sector (max team-axis = deepest in enemy territory; tiebreak by name so
+-- teammates agree). As each base falls it stops being enemy-held, so successive calls roll
+-- inward through the remaining bases. When no enemy base remains, fold into the main group
+-- target (Context.Groups[1]); nil if there is nothing to attack.
+function DeepStrikeTarget()
+	local best, bestAxis
+	for i, flag in pairs(BotApi.Scene.Flags) do
+		local label = Context.FlagLabel[flag.name]
+		if label and label.sector == "ENEMY" and IsEnemyFlag(flag) then
+			local axis = label.axis or 0.5
+			if not best or axis > bestAxis or (axis == bestAxis and flag.name < best) then
+				best, bestAxis = flag.name, axis
+			end
+		end
+	end
+	if best then return best end
+	return Context.Groups[1] and Context.Groups[1].target
+end
+
 function IsDefender(squad)
 	local entry = Context.FieldUnits[squad]
 	return entry ~= nil and DefenderClasses[entry.class] == true
@@ -382,6 +407,25 @@ function LiveArtyCount()
 	for squadId, entry in pairs(Context.FieldUnits) do
 		if entry.class == UnitClass.ArtilleryTank then n = n + 1 end
 	end
+	return n
+end
+
+-- An airborne (paradrop) unit from the current faction roster, drawn by priority, or nil.
+function GetAirborneUnit()
+	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]
+	if not roster then return nil end
+	local drops = {}
+	for i, t in pairs(roster) do
+		if t.class == UnitClass.Airborne then table.insert(drops, t) end
+	end
+	if #drops == 0 then return nil end
+	return GetRandomItem(drops, function(t) return t.priority end)
+end
+
+-- Live airborne squads we have fielded (the deep-strike cap).
+function LiveAirborneCount()
+	local n = 0
+	for squadId in pairs(Context.AirborneSquads) do n = n + 1 end
 	return n
 end
 
@@ -689,6 +733,17 @@ function FlagDeficit()
 		if IsEnemyFlag(flag)    then enemy = enemy + 1 end
 	end
 	return enemy - captured
+end
+
+-- Share of all flags currently held by the enemy, in [0,1]. 0 when there are no flags.
+function EnemyFlagPct()
+	local enemy, total = 0, 0
+	for i, flag in pairs(BotApi.Scene.Flags) do
+		total = total + 1
+		if IsEnemyFlag(flag) then enemy = enemy + 1 end
+	end
+	if total == 0 then return 0 end
+	return enemy / total
 end
 
 -- Wave budget multiplier that scales with how badly we are losing on flags.
@@ -1274,6 +1329,8 @@ function OnGameStart()
 	Context.LastBackfillTime = 0
 	Context.LastDefenderTime = 0
 	Context.LastArtyTime = 0
+	Context.LastDeepStrikeTime = 0
+	Context.AirborneSquads = {}
 	Context.LastOfficerTime = 0
 	Context.LastAtRifleTime = 0
 	Context.RatioCount = 0
@@ -1371,6 +1428,29 @@ function TrackLostFlags()
 			Context.LostStamp[flag.name] = Elapsed()
 		end
 		Context.PrevOwned[flag.name] = ownedNow
+	end
+end
+
+-- Late-game comeback: when the enemy holds more than DeepStrikePct of all flags, drop an
+-- elite airborne squad on its own cooldown (capped). The squad is queued as kind="airborne"
+-- so OnGameSpawn tags it for the deep-strike router instead of a group. Mirrors the MG/arty
+-- trickle shape; runs as an independent trickle because its trigger differs from theirs.
+function DeepStrikeTrickle()
+	if Elapsed() - Context.LastDeepStrikeTime < DeepStrikeIntervalSec then return end
+	if CurrentPhase(Elapsed()).name ~= "late" then return end
+	if EnemyFlagPct() <= DeepStrikePct then return end
+	if LiveAirborneCount() >= DeepStrikeCap then return end
+	local u = GetAirborneUnit()
+	if not u then return end
+	Context.LastDeepStrikeTime = Elapsed()
+	Context.SpawnInfo = u
+	local ok = BotApi.Commands:Spawn(u.unit, MaxSquadSize)
+	print("[AISPAWN] DEEPSTRIKE try=" .. tostring(u.unit) .. " ok=" .. tostring(ok)
+		.. " pct=" .. string.format("%.2f", EnemyFlagPct()))
+	if ok then
+		Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "airborne", info = u }
+	else
+		Context.FailCooldown[u.unit] = Elapsed()
 	end
 end
 
@@ -1556,6 +1636,8 @@ function OnGameQuant()
 		end
 	end
 
+	DeepStrikeTrickle()
+
 	for squadId in pairs(Context.FieldUnits) do
 		if not BotApi.Scene:IsSquadExists(squadId) then
 			local gi = Context.SquadGroup[squadId]
@@ -1563,6 +1645,7 @@ function OnGameQuant()
 			Context.SquadGroup[squadId] = nil
 			Context.FieldUnits[squadId] = nil
 			Context.Cappers[squadId] = nil
+			Context.AirborneSquads[squadId] = nil
 		end
 	end
 	PruneGroups()
@@ -1678,6 +1761,12 @@ function CaptureFlag(squad)
 		BotApi.Commands:CaptureFlag(squad, Context.Groups[gi].target)
 		return
 	end
+	-- Airborne deep-strike squads: drive at the deepest enemy base, then the main target.
+	if Context.AirborneSquads[squad] then
+		local name = DeepStrikeTarget()
+		if name and FlagAttackable(name) then BotApi.Commands:CaptureFlag(squad, name) end
+		return
+	end
 	-- Cappers chase neutral flags (trickle; never group members).
 	if Context.Cappers[squad] then
 		local flag = GetFlagToCapture(BotApi.Scene.Flags, CapperFlagPriority)
@@ -1737,6 +1826,8 @@ function OnGameSpawn(args)
 		g.seeded = true
 		g.pending = math.max(0, (g.pending or 0) - 1)
 		Context.SquadGroup[args.squadId] = d.slot
+	elseif d and d.kind == "airborne" then
+		Context.AirborneSquads[args.squadId] = true
 	end
 	-- Officers stay parked at the spawn (they hold the unit cap); everyone else gets a
 	-- capture order. Cappers rotate fast so they advance to the next flag after capping;
