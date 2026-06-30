@@ -26,8 +26,12 @@ ROSTER = {
 
 _PRIORITY = {"rocket": 0.3, "heavy": 0.5, "field": 0.8}
 
-def subtype_of(tag):
+# Rocket platforms whose RobZ t() tag omits the "rocket" token (data gap); force rocket.
+_ROCKET_OVERRIDE = {"sdkfz251_1_stuka"}
+
+def subtype_of(tag, unit=None):
     """Map a RobZ t() tag string to an arty subtype."""
+    if unit in _ROCKET_OVERRIDE: return "rocket"
     if "rocket" in tag: return "rocket"
     if "heavyart" in tag or "heavy" in tag: return "heavy"
     return "field"
@@ -73,7 +77,7 @@ def merge_nation(nation, existing_ids, mpset):
         if u not in mpset:
             print("DROP %s/%s: not in mp-set" % (nation, u), file=sys.stderr)
             continue
-        sub = subtype_of(mpset[u])
+        sub = subtype_of(mpset[u], u)
         mi, ul = ref.get(u, (2.0, 900))
         rows.append(render_row(u, sub, mi, ul))
     return rows

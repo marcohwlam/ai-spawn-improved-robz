@@ -340,7 +340,7 @@ Purchases = {
 				{priority=1.0, class=UnitClass.ATTank,        unit="nashorn_ger2",        min_income=2.0, min_team=1, unlock=1900,},
 				{priority=0.8, class=UnitClass.ArtilleryTank, unit="wespe_ger2", min_income=2.0, min_team=1, unlock=900, arty="field",},
 				{priority=0.5, class=UnitClass.ArtilleryTank, unit="sdkfz138_1", min_income=2.0, min_team=1, unlock=900, arty="heavy",},
-				{priority=0.5, class=UnitClass.ArtilleryTank, unit="sdkfz251_1_stuka", min_income=2.5, min_team=1, unlock=1200, arty="heavy",},
+				{priority=0.3, class=UnitClass.ArtilleryTank, unit="sdkfz251_1_stuka", min_income=2.5, min_team=1, unlock=1200, arty="rocket",},
 			},
 			["rus_guard"] = {
 				{priority=2.0, class=UnitClass.Infantry,   unit="specialinf(rus_guard)", line=true, inf="smg",},

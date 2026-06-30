@@ -9,6 +9,9 @@ assert m.subtype_of("all artillery heavyart heavy 43 44 45") == "heavy"
 assert m.subtype_of("artillery all heavy 44 45") == "heavy"
 assert m.subtype_of("all artillery 43 44 45") == "field"
 assert m.subtype_of("artillery 44") == "field"
+assert m.subtype_of("all 44 45 artillery heavyart", "sdkfz251_1_stuka") == "rocket"  # override
+assert m.subtype_of("all 44 45 artillery heavyart", "sdkfz138_1") == "heavy"          # not overridden
+assert m.subtype_of("artillery 44") == "field"                                        # unit omitted still works
 print("subtype_of OK")
 
 # --- priority_of ---
