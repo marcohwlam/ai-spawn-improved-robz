@@ -73,24 +73,16 @@ def adjacency(bases, flags):
         for n in close:
             base[n].add(bname[0])
     # dedupe: a flag tagged for both teams keeps only its nearer side (a wins exact ties)
-    deduped = set()
     for n in names:
         if {"a", "b"} <= base[n]:
-            deduped.add(n)
             da = _side_dist(flags, bases, n, "a")
             db = _side_dist(flags, bases, n, "b")
             base[n] = {"a"} if da <= db else {"b"}
-    # trim: keep N = min(countA, countB) nearest flags per side, prioritizing deduped flags
-    a_flags_deduped = sorted((n for n in names if base[n] == {"a"} and n in deduped),
-                             key=lambda n: _side_dist(flags, bases, n, "a"))
-    a_flags_regular = sorted((n for n in names if base[n] == {"a"} and n not in deduped),
-                             key=lambda n: _side_dist(flags, bases, n, "a"))
-    b_flags_deduped = sorted((n for n in names if base[n] == {"b"} and n in deduped),
-                             key=lambda n: _side_dist(flags, bases, n, "b"))
-    b_flags_regular = sorted((n for n in names if base[n] == {"b"} and n not in deduped),
-                             key=lambda n: _side_dist(flags, bases, n, "b"))
-    a_flags = a_flags_deduped + a_flags_regular
-    b_flags = b_flags_deduped + b_flags_regular
+    # trim: keep N = min(countA, countB) nearest flags per side
+    a_flags = sorted((n for n in names if base[n] == {"a"}),
+                     key=lambda n: (_side_dist(flags, bases, n, "a"), n))
+    b_flags = sorted((n for n in names if base[n] == {"b"}),
+                     key=lambda n: (_side_dist(flags, bases, n, "b"), n))
     N = min(len(a_flags), len(b_flags))
     assert N >= 1, "a side or b side has no base flag"
     keep = set(a_flags[:N]) | set(b_flags[:N])
