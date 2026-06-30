@@ -274,6 +274,26 @@ function ArtilleryTargetFlag(entry)
 	return best
 end
 
+-- The flag an airborne deep-strike squad should attack: the FURTHEST enemy-held flag in
+-- the enemy base sector (max team-axis = deepest in enemy territory; tiebreak by name so
+-- teammates agree). As each base falls it stops being enemy-held, so successive calls roll
+-- inward through the remaining bases. When no enemy base remains, fold into the main group
+-- target (Context.Groups[1]); nil if there is nothing to attack.
+function DeepStrikeTarget()
+	local best, bestAxis
+	for i, flag in pairs(BotApi.Scene.Flags) do
+		local label = Context.FlagLabel[flag.name]
+		if label and label.sector == "ENEMY" and IsEnemyFlag(flag) then
+			local axis = label.axis or 0.5
+			if not best or axis > bestAxis or (axis == bestAxis and flag.name < best) then
+				best, bestAxis = flag.name, axis
+			end
+		end
+	end
+	if best then return best end
+	return Context.Groups[1] and Context.Groups[1].target
+end
+
 function IsDefender(squad)
 	local entry = Context.FieldUnits[squad]
 	return entry ~= nil and DefenderClasses[entry.class] == true

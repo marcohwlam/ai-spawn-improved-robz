@@ -31,3 +31,42 @@ eq(LiveAirborneCount(), 2, "LiveAirborneCount")
 Context.AirborneSquads = {}
 eq(LiveAirborneCount(), 0, "LiveAirborneCount empty")
 print("airborne helpers OK")
+
+-- DeepStrikeTarget: pick the FURTHEST enemy-held ENEMY-sector flag (max axis).
+Context.Groups = {}
+Context.FlagLabel = {
+	eNear = { sector = "ENEMY", axis = 0.60 },
+	eDeep = { sector = "ENEMY", axis = 0.90 },
+	mid   = { sector = "CONTESTED", axis = 0.50 },
+	ours  = { sector = "OWN", axis = 0.10 },
+}
+BotApi.Scene.Flags = {
+	{ name = "eNear", occupant = 2 },  -- enemy-held enemy base
+	{ name = "eDeep", occupant = 2 },  -- enemy-held enemy base, deeper
+	{ name = "mid",   occupant = 2 },  -- enemy-held but not a base (CONTESTED)
+	{ name = "ours",  occupant = 1 },
+}
+eq(DeepStrikeTarget(), "eDeep", "furthest enemy base first")
+
+-- After the deepest base is taken (now ours), the next-furthest base is chosen.
+BotApi.Scene.Flags = {
+	{ name = "eNear", occupant = 2 },
+	{ name = "eDeep", occupant = 1 },  -- captured
+	{ name = "mid",   occupant = 2 },
+	{ name = "ours",  occupant = 1 },
+}
+eq(DeepStrikeTarget(), "eNear", "chain to next-furthest enemy base")
+
+-- No enemy base left -> the main group target.
+Context.Groups = { [1] = { target = "mainObjective" } }
+BotApi.Scene.Flags = {
+	{ name = "eNear", occupant = 1 },
+	{ name = "eDeep", occupant = 1 },
+	{ name = "ours",  occupant = 1 },
+}
+eq(DeepStrikeTarget(), "mainObjective", "no enemy base -> main group target")
+
+-- No enemy base and no group -> nil.
+Context.Groups = {}
+eq(DeepStrikeTarget(), nil, "no base, no group -> nil")
+print("DeepStrikeTarget OK")
