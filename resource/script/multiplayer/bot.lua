@@ -121,8 +121,8 @@ function AdvanceClock()
 	Context.LastWall = now
 end
 
-local MainGroupSize = 5   -- main prong member count
-local SubGroupSize  = 3   -- sub prong member count
+local MainGroupSize = 5   -- main prong member count (fallback; per-phase mainGroup overrides)
+local SubGroupSize  = 3   -- sub prong member count  (fallback; per-phase subGroup overrides)
 local MaxGroups = 2       -- main + sub prongs on adjacent flags
 
 -- Hard ceiling on this bot's OWN live squads (combat fill). The engine is 32-bit (~2GB);
@@ -585,16 +585,17 @@ end
 
 -- Create groups: the 1st whenever none exist; the 2nd only once the 1st is full.
 function ManageGroups()
+	local phase = CurrentPhase(Elapsed())
 	if not Context.Groups[1] then
 		local t = PickGroupTarget(nil)
-		Context.Groups[1] = { members = {}, auxMembers = {}, size = MainGroupSize, target = t, pending = 0,
-			phase = CurrentPhase(Elapsed()).name }
+		Context.Groups[1] = { members = {}, auxMembers = {}, size = phase.mainGroup or MainGroupSize, target = t, pending = 0,
+			phase = phase.name }
 		print("[AISPAWN] GROUP_NEW id=1 target=" .. tostring(t) .. PidTag())
 	elseif MaxGroups >= 2 and not Context.Groups[2]
 	   and GroupMemberCount(Context.Groups[1]) >= Context.Groups[1].size then
 		local t = PickSubTarget(Context.Groups[1].target)
-		Context.Groups[2] = { members = {}, auxMembers = {}, size = SubGroupSize, target = t, pending = 0,
-			phase = CurrentPhase(Elapsed()).name }
+		Context.Groups[2] = { members = {}, auxMembers = {}, size = phase.subGroup or SubGroupSize, target = t, pending = 0,
+			phase = phase.name }
 		print("[AISPAWN] GROUP_NEW id=2 target=" .. tostring(t) .. PidTag())
 	end
 end
@@ -799,11 +800,14 @@ function ResolvePhases(army)
 	if not fp then return Phases end
 	return {
 		{ name = "early", upto = fp.mid, targets = Phases[1].targets,
-		  budget = Phases[1].budget, waveMult = Phases[1].waveMult, squadCap = Phases[1].squadCap },
+		  budget = Phases[1].budget, waveMult = Phases[1].waveMult, squadCap = Phases[1].squadCap,
+		  mainGroup = Phases[1].mainGroup, subGroup = Phases[1].subGroup },
 		{ name = "mid", upto = fp.late, targets = Phases[2].targets,
-		  budget = Phases[2].budget, waveMult = Phases[2].waveMult, squadCap = Phases[2].squadCap },
+		  budget = Phases[2].budget, waveMult = Phases[2].waveMult, squadCap = Phases[2].squadCap,
+		  mainGroup = Phases[2].mainGroup, subGroup = Phases[2].subGroup },
 		{ name = "late", upto = 1000000000, targets = fp.lateTargets or Phases[3].targets,
-		  budget = Phases[3].budget, waveMult = Phases[3].waveMult, squadCap = Phases[3].squadCap },
+		  budget = Phases[3].budget, waveMult = Phases[3].waveMult, squadCap = Phases[3].squadCap,
+		  mainGroup = Phases[3].mainGroup, subGroup = Phases[3].subGroup },
 	}
 end
 
