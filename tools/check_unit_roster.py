@@ -8,9 +8,16 @@ FACTIONS = ["eng", "ger", "ger_ss", "ger2", "usa", "rus", "rus_guard", "jap"]
 
 ID_PATTERNS = [
     re.compile(r'\bv1\(([A-Za-z0-9_\-.]+)\)'),     # vehicle breed reference
-    re.compile(r'\bname\(([A-Za-z0-9_\-.]+)\)'),   # squad name id
     re.compile(r'\{"([A-Za-z0-9_\-.]+)"\s*\('),    # roster button key (fallback)
 ]
+# Squad name(...) ids are intentionally NOT scanned by directory here: RobZ
+# multiplexes several factions' squads into one shared .set file, tagged
+# side(<faction>) name(<id>), rather than segregating them per directory
+# (e.g. ger_ss's squads live inside ger/squads_44.set). A directory-based
+# name() scan would attribute every faction's squads sharing that file to
+# whichever faction owns the directory, masking real MISMATCH bugs in that
+# direction. scan_side_tagged_ids() below is the sole source of squad ids,
+# keyed off the side() tag rather than the file's physical location.
 
 def scan_faction_ids(pak_path, faction):
     """Return (ids, matched_filenames) for set/multiplayer/units/<faction>/*.set."""

@@ -12,20 +12,35 @@ assert "pz3_m_ss" in ids, "pz3_m_ss (v1 breed) should be found in ger_ss roster"
 assert "hetzer_ss" in ids, "hetzer_ss (v1 breed) should be found in ger_ss roster"
 assert "wespe_ss" in ids, "wespe_ss (v1 breed) should be found in ger_ss roster"
 
-ids_rus, files_rus = cur.scan_faction_ids(PAK, "rus")
-assert files_rus, "expected at least one .set file for rus"
-assert "smgs" in ids_rus, "smgs (name()) should be found in rus roster"
-assert "riflemans" in ids_rus, "riflemans (name()) should be found in rus roster"
-
 missing_ids, missing_files = cur.scan_faction_ids(PAK, "not_a_real_faction")
 assert missing_files == [], "nonexistent faction directory should yield no files"
 assert missing_ids == set(), "nonexistent faction directory should yield no ids"
+
+# Squad name() ids are NOT attributed by directory (scan_faction_ids alone) --
+# RobZ multiplexes several factions' squads into a shared .set file, tagged
+# side(<faction>) name(<id>), so directory-only attribution would misfile
+# them. scan_side_tagged_ids() is the side()-aware source for squad ids.
+side_tagged = cur.scan_side_tagged_ids(PAK)
+assert "smgs" in side_tagged.get("rus", set()), "smgs (side-tagged) should be found in rus roster"
+assert "riflemans" in side_tagged.get("rus", set()), "riflemans (side-tagged) should be found in rus roster"
 
 index, files_by_faction = cur.build_roster_index(PAK, cur.FACTIONS)
 assert set(index.keys()) == set(cur.FACTIONS)
 assert all(files_by_faction[f] for f in cur.FACTIONS), \
     "every real faction should have at least one .set file: %r" % {
         f: files_by_faction[f] for f in cur.FACTIONS if not files_by_faction[f]}
+assert "smgs" in index["rus"] and "riflemans" in index["rus"], \
+    "build_roster_index should merge side-tagged squad ids into rus's index"
+
+# Regression pin (final whole-branch review finding): a directory-based
+# name() scan of ger/ would previously misattribute ger_ss-only squads
+# (multiplexed inside ger/squads_44.set) to ger's roster, masking MISMATCH
+# when a ger entry copy-pastes a ger_ss-only squad id. Confirm a real
+# ger_ss-exclusive squad id is NOT present in ger's index.
+assert "lssah_pzgren_mg_39" not in index["ger"], \
+    "ger_ss-only squad id must not leak into ger's roster via directory scan"
+assert "lssah_pzgren_mg_39" in index["ger_ss"], \
+    "lssah_pzgren_mg_39 should still be found via its side(ger_ss) tag"
 print("roster scanner test OK")
 
 # --- Task 2: bot.data.lua extraction ---
