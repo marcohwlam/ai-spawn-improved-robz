@@ -104,3 +104,45 @@ assert len(mismatch_problems) == 1, mismatch_problems
 assert mismatch_problems[0]["kind"] == "MISMATCH", mismatch_problems
 assert mismatch_problems[0]["other"] == "ger_ss", mismatch_problems
 print("cross-check test OK")
+
+# --- Task 4: integration test against the real, current repo files ---
+import subprocess
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BOT_DATA = os.path.join(REPO_ROOT, "resource", "script", "multiplayer", "bot.data.lua")
+
+# 4a. Direct function-level check: the CURRENT bot.data.lua (all ids fixed
+# this session) should report zero problems against the real pak.
+index, _ = cur.build_roster_index(PAK, cur.FACTIONS)
+units = cur.extract_bot_units(BOT_DATA)
+assert len(units) > 50, "sanity check: expected many unit= entries, got %d" % len(units)
+problems = cur.check(index, units)
+assert problems == [], "expected zero problems on current bot.data.lua, got:\n%r" % problems
+print("integration (function-level) test OK: %d units, 0 problems" % len(units))
+
+# 4b. CLI smoke test: running the script directly should exit 0 and print
+# a "no problems" summary line, given the same clean current state.
+result = subprocess.run(
+    ["python3", "check_unit_roster.py", PAK, BOT_DATA],
+    capture_output=True, text=True)
+assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
+assert "no problems found" in result.stdout, result.stdout
+print("integration (CLI) test OK")
+
+# 4c. CLI regression test: reintroduce the pre-fix ger_ss bug (unsuffixed
+# "pz3_m" instead of "pz3_m_ss") in a temp copy and confirm it's caught.
+with open(BOT_DATA) as f:
+    real_text = f.read()
+broken_text = real_text.replace(
+    'unit="pz3_m_ss"', 'unit="pz3_m"', 1)
+assert broken_text != real_text, "fixture assumption broke: pz3_m_ss not found in bot.data.lua"
+broken_path = _write_temp_lua(broken_text)
+try:
+    result = subprocess.run(
+        ["python3", "check_unit_roster.py", PAK, broken_path],
+        capture_output=True, text=True)
+finally:
+    os.remove(broken_path)
+assert result.returncode == 1, (result.returncode, result.stdout, result.stderr)
+assert "MISMATCH" in result.stdout and "pz3_m" in result.stdout, result.stdout
+print("integration (regression) test OK")

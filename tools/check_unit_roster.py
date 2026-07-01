@@ -24,6 +24,24 @@ def scan_faction_ids(pak_path, faction):
                 ids.update(pat.findall(text))
     return ids, names
 
+SIDE_NAME_RE = re.compile(r'side\((\w+)\)\s*name\(([A-Za-z0-9_\-.]+)\)')
+
+def scan_side_tagged_ids(pak_path):
+    """Return {faction: set(ids)} for squad entries tagged side(<faction>)
+    name(<id>) anywhere under set/multiplayer/units/, regardless of which
+    faction's directory the .set file physically lives in. RobZ multiplexes
+    several factions' squads into one shared file (e.g. ger_ss's squads are
+    tagged side(ger_ss) inside ger/squads_44.set, not in a ger_ss/ file)."""
+    ids = {}
+    prefix = "set/multiplayer/units/"
+    with zipfile.ZipFile(pak_path) as z:
+        names = [n for n in z.namelist() if n.startswith(prefix) and n.endswith(".set")]
+        for n in names:
+            text = z.read(n).decode("latin-1")
+            for side, name in SIDE_NAME_RE.findall(text):
+                ids.setdefault(side, set()).add(name)
+    return ids
+
 def build_roster_index(pak_path, factions):
     """Return ({faction: set(ids)}, {faction: [set-file names]})."""
     index, files = {}, {}
@@ -31,6 +49,9 @@ def build_roster_index(pak_path, factions):
         ids, names = scan_faction_ids(pak_path, f)
         index[f] = ids
         files[f] = names
+    side_tagged = scan_side_tagged_ids(pak_path)
+    for f in factions:
+        index[f] |= side_tagged.get(f, set())
     return index, files
 
 FACTION_BLOCK_RE = re.compile(r'^\s*\["(\w+)"\]\s*=\s*\{\s*$')
@@ -83,3 +104,34 @@ def check(roster_index, bot_units):
             problems.append({"faction": faction, "id": unit_id, "line": lineno,
                               "kind": "NOT_FOUND"})
     return problems
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("pak", help="path to RobZ gamelogic.pak")
+    ap.add_argument("bot_data", help="path to bot.data.lua")
+    a = ap.parse_args()
+
+    roster_index, roster_files = build_roster_index(a.pak, FACTIONS)
+    for f in FACTIONS:
+        if not roster_files[f]:
+            print("WARNING: no roster .set files found for faction %r" % f, file=sys.stderr)
+
+    bot_units = extract_bot_units(a.bot_data)
+    problems = check(roster_index, bot_units)
+
+    if not problems:
+        print("check_unit_roster: no problems found (%d units checked)" % len(bot_units))
+        return
+
+    for p in sorted(problems, key=lambda p: (p["faction"], p["line"])):
+        if p["kind"] == "MISMATCH":
+            print("%s line %d: %s -- MISMATCH (belongs to %s)"
+                  % (p["faction"], p["line"], p["id"], p["other"]))
+        else:
+            print("%s line %d: %s -- NOT_FOUND"
+                  % (p["faction"], p["line"], p["id"]))
+    print("%d problem(s) found out of %d units checked" % (len(problems), len(bot_units)))
+    sys.exit(1)
+
+if __name__ == "__main__":
+    main()
