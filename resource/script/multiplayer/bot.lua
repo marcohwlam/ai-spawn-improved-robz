@@ -1338,7 +1338,7 @@ function OnGameStart()
 	math.random() math.random() math.random()
 	Context.Purchase = PIter:new(Purchases)
 	Context.Phases = ResolvePhases(BotApi.Instance.army)
-	Context.LastWaveTime = 0
+	Context.LastWaveTime = -WaveIntervalSec -- negative so the first wave-start check passes immediately at Elapsed()==0
 	Context.MatchQuants = 0
 	Context.StartTime = os.time()
 	Context.GameClock = 0
@@ -1462,8 +1462,9 @@ end
 -- trickle shape; runs as an independent trickle because its trigger differs from theirs.
 function DeepStrikeTrickle()
 	if Elapsed() - Context.LastDeepStrikeTime < DeepStrikeIntervalSec then return end
-	if CurrentPhase(Elapsed()).name ~= "late" then return end
-	if EnemyFlagPct() <= DeepStrikePct then return end
+	local phaseName = CurrentPhase(Elapsed()).name
+	if phaseName ~= "mid" and phaseName ~= "late" then return end
+	if EnemyFlagPct() <= DeepStrikePct and not IsLosing() then return end
 	if LiveAirborneCount() >= DeepStrikeCap then return end
 	local u = GetAirborneUnit()
 	if not u then return end
