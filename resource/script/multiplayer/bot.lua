@@ -55,7 +55,7 @@ local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spen
 -- Neutral-flag capper trickle: every NeutralInterval quants, if any flag is
 -- neutral, spawn one cheap single soldier ordered to grab a neutral flag.
 local NeutralIntervalSec  = 12   -- seconds between capper checks (longer cooldown: cappers trickle, not stream)
-local CapperCap       = 2       -- max live single-soldier cappers (prevents stacking)
+local CapperCap       = 4       -- max live single-soldier cappers (prevents stacking)
 -- Cappers re-pick their target far faster than the standard 3-minute rotation so a capper
 -- rolls on to the next neutral flag right after taking one, instead of idling on it.
 local CapperRotationPeriod = 15 * 1000 -- ms between capper target re-picks
@@ -924,7 +924,7 @@ function GetUnitToSpawn(units)
 		local out = {}
 		for i, t in pairs(pool) do
 			if TierOf(t) == nil and AuxEligible(t, enemyHasTanks) then
-				if not (t.class == UnitClass.Airborne and Context.SpawnFlags.isAirborne)
+				if t.class ~= UnitClass.Airborne         -- airborne ONLY via the deep-strike trickle (late + losing gate)
 				and not (t.class == UnitClass.Rare and Context.SpawnFlags.isRare)
 				and t.class ~= UnitClass.Howitzrer
 				and t.class ~= UnitClass.ArtilleryTank   -- SPGs disabled (poor bot AI use)
@@ -1733,22 +1733,27 @@ function FlagTier(name)
 	end
 	if not flag then return nil end
 	local held = flag.occupant == enemy
-	local attacking = flag.occupant ~= team and flag.occupant ~= enemy
-		and Context.LostStamp[name] ~= nil
-	if not (held or attacking) then return nil end
+	local neutral = flag.occupant ~= team and flag.occupant ~= enemy
+	local lostNeutral = neutral and Context.LostStamp[name] ~= nil
 	local label = Context.FlagLabel[name] or {}
 	local owner = Context.FlagOwner[name]
+	-- Natural frontline: a frontier flag in our own lane is a group target whether the enemy
+	-- holds it OR it is still neutral. This keeps groups fighting at the contested boundary
+	-- instead of marching past a neutral center straight into the enemy base.
+	if owner and owner.mine and label.sector == "CONTESTED" and IsFrontier(name)
+	   and (held or neutral) then
+		return 2
+	end
+	-- Everything below is a recapture/deep target: the flag must be enemy-held or freshly lost.
+	if not (held or lostNeutral) then return nil end
 	if label.sector == "OWN" then
 		-- First 4 minutes: groups do not pull back to recapture home flags; they push
 		-- forward and leave home defense to cappers/defenders. After the grace, home
 		-- recapture resumes at top priority.
 		if Elapsed() < GroupHomeGraceSec then return nil end
 		return 1
-	elseif owner and owner.mine and label.sector == "CONTESTED" and IsFrontier(name) then
-		return 2
-	else
-		return 3
 	end
+	return 3
 end
 
 -- The group's attack flag, by the FlagTier ladder over candidates, excluding
@@ -1765,7 +1770,10 @@ function PickGroupTarget(excludeName)
 				local label = Context.FlagLabel[name] or {}
 				local key
 				if tier == 1 or tier == 2 then
-					key = label.axis or 1
+					-- Within the frontier tier, contest enemy-held flags before advancing onto
+					-- still-neutral ones (bias held ahead); ties break by axis (rear first).
+					local heldHere = flag.occupant == BotApi.Instance.enemyTeam
+					key = (heldHere and 0 or 1000) + (label.axis or 1)
 				else
 					local d = NearestOwnedDist(label)
 					if d then
