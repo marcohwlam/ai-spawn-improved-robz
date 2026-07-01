@@ -302,7 +302,15 @@ function DeepStrikeTarget()
 		end
 	end
 	if best then return best end
-	return Context.Groups[1] and Context.Groups[1].target
+	-- Never fall back to a home-sector flag: the main group may legitimately be
+	-- recapturing an OWN flag post-grace-period, but paras dropped there would land
+	-- in our own territory instead of contesting the enemy.
+	local fallback = Context.Groups[1] and Context.Groups[1].target
+	if fallback then
+		local label = Context.FlagLabel[fallback]
+		if label and label.sector == "OWN" then return nil end
+	end
+	return fallback
 end
 
 function IsDefender(squad)
