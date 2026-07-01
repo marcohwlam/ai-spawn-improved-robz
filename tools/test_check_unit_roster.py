@@ -76,3 +76,31 @@ assert cur.strip_suffix("grenadiers_elite(ger)") == "grenadiers_elite"
 assert cur.strip_suffix("light_mortar_ger") == "light_mortar_ger"
 assert cur.strip_suffix("pz3_m") == "pz3_m"
 print("strip_suffix test OK")
+
+# --- Task 3: cross-check logic ---
+fake_index = {
+    "ger":    {"pz2l", "volksgrens"},
+    "ger_ss": {"pz3_m_ss", "hetzer_ss"},
+    "rus":    {"smgs"},
+}
+fake_units = [
+    ("ger", "volksgrens(ger)", 9),      # OK: suffix-stripped "volksgrens" is in ger's set
+    ("ger", "pz2l", 10),                # OK: exact match in ger's set
+    ("ger_ss", "pz3_m", 13),            # NOT_FOUND: bare "pz3_m" isn't in ger_ss, but...
+    ("ger_ss", "hetzer_ss", 14),        # OK: exact match in ger_ss's set
+    ("rus", "riflemans(rus)", 20),      # NOT_FOUND: not in rus's set or any other faction's
+]
+problems = cur.check(fake_index, fake_units)
+by_line = {p["line"]: p for p in problems}
+assert 9 not in by_line and 10 not in by_line and 14 not in by_line, problems
+assert by_line[13]["kind"] == "NOT_FOUND", by_line[13]
+assert by_line[20]["kind"] == "NOT_FOUND", by_line[20]
+assert len(problems) == 2, problems
+
+# MISMATCH case: an id that IS real, but under a different faction than claimed
+mismatch_units = [("ger", "pz3_m_ss", 99)]   # "pz3_m_ss" only exists under ger_ss
+mismatch_problems = cur.check(fake_index, mismatch_units)
+assert len(mismatch_problems) == 1, mismatch_problems
+assert mismatch_problems[0]["kind"] == "MISMATCH", mismatch_problems
+assert mismatch_problems[0]["other"] == "ger_ss", mismatch_problems
+print("cross-check test OK")

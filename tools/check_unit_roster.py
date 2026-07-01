@@ -65,3 +65,21 @@ def strip_suffix(unit_id):
     unchanged if it has none."""
     m = re.match(r'^(.+)\(\w+\)$', unit_id)
     return m.group(1) if m else unit_id
+
+def check(roster_index, bot_units):
+    """Return a list of problem dicts: {faction, id, line, kind, other?}."""
+    problems = []
+    for faction, unit_id, lineno in bot_units:
+        bare = strip_suffix(unit_id)
+        candidates = {unit_id, bare}
+        if candidates & roster_index.get(faction, set()):
+            continue
+        found_in = [f for f, ids in roster_index.items()
+                    if f != faction and candidates & ids]
+        if found_in:
+            problems.append({"faction": faction, "id": unit_id, "line": lineno,
+                              "kind": "MISMATCH", "other": found_in[0]})
+        else:
+            problems.append({"faction": faction, "id": unit_id, "line": lineno,
+                              "kind": "NOT_FOUND"})
+    return problems
