@@ -32,3 +32,36 @@ def build_roster_index(pak_path, factions):
         index[f] = ids
         files[f] = names
     return index, files
+
+FACTION_BLOCK_RE = re.compile(r'^\s*\["(\w+)"\]\s*=\s*\{\s*$')
+UNIT_RE = re.compile(r'unit\s*=\s*"([^"]+)"')
+
+def extract_bot_units(bot_data_path):
+    """Return [(faction, id, lineno), ...] for every unit="..." entry inside a
+    ["faction"] = { ... } block in bot.data.lua. A block opens on a line that
+    ends in an unqualified "= {" (FACTION_BLOCK_RE) and closes when brace
+    depth returns to zero. Single-line ["faction"] = { mid = ..., late = ... }
+    entries (FactionPhases) never match FACTION_BLOCK_RE and are skipped."""
+    out = []
+    current = None
+    depth = 0
+    with open(bot_data_path) as fh:
+        for lineno, line in enumerate(fh, start=1):
+            if current is None:
+                m = FACTION_BLOCK_RE.match(line)
+                if m:
+                    current = m.group(1)
+                    depth = 1
+                continue
+            depth += line.count("{") - line.count("}")
+            for um in UNIT_RE.finditer(line):
+                out.append((current, um.group(1), lineno))
+            if depth <= 0:
+                current = None
+    return out
+
+def strip_suffix(unit_id):
+    """Return the id with a trailing "(word)" annotation removed, or the id
+    unchanged if it has none."""
+    m = re.match(r'^(.+)\(\w+\)$', unit_id)
+    return m.group(1) if m else unit_id

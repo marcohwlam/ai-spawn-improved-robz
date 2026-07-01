@@ -27,3 +27,52 @@ assert all(files_by_faction[f] for f in cur.FACTIONS), \
     "every real faction should have at least one .set file: %r" % {
         f: files_by_faction[f] for f in cur.FACTIONS if not files_by_faction[f]}
 print("roster scanner test OK")
+
+# --- Task 2: bot.data.lua extraction ---
+import tempfile, os
+
+SAMPLE_LUA = '''\
+FactionPhases = {
+\t["ger"]       = { mid = 630, late = 1500 },
+\t["ger_ss"]    = { mid = 630, late = 1500 },
+}
+
+Purchases = {
+\t{
+\t\tUnits = {
+\t\t\t["ger"] = {
+\t\t\t\t{priority=2.0, class=UnitClass.Infantry, unit="volksgrens(ger)", line=true,},
+\t\t\t\t{priority=1.5, class=UnitClass.Tank,     unit="pz2l", min_income=1.0,},
+\t\t\t},
+\t\t\t["ger_ss"] = {
+\t\t\t\t{priority=1.0, class=UnitClass.Tank,     unit="pz3_m", min_income=1.0,},
+\t\t\t},
+\t\t},
+\t},
+}
+'''
+
+def _write_temp_lua(text):
+    fd, path = tempfile.mkstemp(suffix=".lua")
+    with os.fdopen(fd, "w") as f:
+        f.write(text)
+    return path
+
+path = _write_temp_lua(SAMPLE_LUA)
+try:
+    units = cur.extract_bot_units(path)
+finally:
+    os.remove(path)
+
+assert ("ger", "volksgrens(ger)", 10) in units, units
+assert ("ger", "pz2l", 11) in units, units
+assert ("ger_ss", "pz3_m", 14) in units, units
+# the FactionPhases single-line entries must NOT be picked up as unit blocks
+assert not any(f in ("ger", "ger_ss") and u in ("mid", "late") for f, u, _ in units), units
+assert len(units) == 3, units
+print("bot.data.lua extraction test OK")
+
+assert cur.strip_suffix("grenadiers_elite(ger)") == "grenadiers_elite"
+assert cur.strip_suffix("light_mortar_ger") == "light_mortar_ger"
+assert cur.strip_suffix("pz3_m") == "pz3_m"
+print("strip_suffix test OK")
