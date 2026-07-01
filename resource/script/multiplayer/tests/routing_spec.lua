@@ -136,6 +136,35 @@ UpdateGroupTargets()
 eq(Context.Groups[1].target, "f4", "same-tier closer candidate does not preempt")
 BotApi.Commands.CaptureFlag = realCapture
 
+-- Stuck timeout: a group that has held the same still-attackable, non-preemptable
+-- target for more than GroupTargetStuckSec (480s) is forced to re-pick, excluding
+-- the stuck flag, even though nothing else about the target changed.
+Context.LostStamp = {}
+Context.Groups = {}
+Context.SquadGroup = { s3 = 1 }
+Context.FieldUnits = { s3 = { unit = "x" } }
+BotApi.Scene.Flags = bastogne({ f4 = "b", f10 = "b" })   -- f4,f10 tier-3 enemy, no owned flag
+LabelFlags(); PartitionFlags()
+local stuckCaptured = {}
+local realCap3 = BotApi.Commands.CaptureFlag
+BotApi.Commands.CaptureFlag = function(_, squad, flag) stuckCaptured[squad] = flag end
+
+-- Under the timeout: no re-pick even though f10 is an equal-tier candidate.
+Context.Groups[1] = { members = { s3 = true }, size = 5, target = "f4", pending = 0, targetSince = 0 }
+Context.GameClock = 479
+UpdateGroupTargets()
+eq(Context.Groups[1].target, "f4", "under 480s stuck: no re-pick")
+eq(stuckCaptured.s3, nil, "under 480s stuck: no re-order issued")
+
+-- Past the timeout: forced re-pick lands on the only other tier-3 candidate (f10),
+-- excluding the stuck flag (f4) itself.
+Context.GameClock = 481
+UpdateGroupTargets()
+eq(Context.Groups[1].target, "f10", "past 480s stuck: forced re-pick excludes f4")
+eq(stuckCaptured.s3, "f10", "past 480s stuck: ReorderGroup re-issued capture to member")
+eq(Context.Groups[1].targetSince, 481, "past 480s stuck: targetSince resets on re-pick")
+BotApi.Commands.CaptureFlag = realCap3
+
 -- === Task 2: PickSubTarget ===
 
 -- Sub picks the objective nearest to the main target, excluding the main target.

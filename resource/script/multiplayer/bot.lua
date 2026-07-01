@@ -60,6 +60,7 @@ local CapperCap       = 4       -- max live single-soldier cappers (prevents sta
 -- rolls on to the next neutral flag right after taking one, instead of idling on it.
 local CapperRotationPeriod = 15 * 1000 -- ms between capper target re-picks
 local GroupHomeGraceSec = 240 -- first N seconds: groups ignore OWN-sector (home) flags and push forward
+local GroupTargetStuckSec = 480 -- if a group can't take its target within this long, force a re-pick
 
 -- When a Spawn fails (usually the picked unit is unaffordable right now), bench
 -- that unit for FailCooldownSec seconds so the picker falls through to a cheaper tier
@@ -608,7 +609,7 @@ function ManageGroups()
 	if not Context.Groups[1] then
 		local t = PickGroupTarget(nil)
 		Context.Groups[1] = { members = {}, auxMembers = {}, size = phase.mainGroup or MainGroupSize, target = t, pending = 0,
-			phase = phase.name }
+			phase = phase.name, targetSince = Elapsed() }
 		print("[AISPAWN] GROUP_NEW id=1 target=" .. tostring(t) .. PidTag())
 	elseif MaxGroups >= 2 and not Context.Groups[2]
 	   and GroupMemberCount(Context.Groups[1]) >= Context.Groups[1].size then
@@ -661,7 +662,7 @@ function UpdateGroupTargets()
 	local g2 = Context.Groups[2]
 	if g1 then
 		local other = g2 and g2.target
-		local newT
+		local newT, stuck
 		if not g1.target or not FlagAttackable(g1.target) then
 			newT = PickGroupTarget(other)
 		else
@@ -670,13 +671,20 @@ function UpdateGroupTargets()
 			local gt = FlagTier(g1.target)
 			if ct and gt and ct < gt then
 				newT = cand
+			elseif Elapsed() - (g1.targetSince or Elapsed()) > GroupTargetStuckSec then
+				-- Still attackable and no better tier, but the group hasn't taken it within
+				-- GroupTargetStuckSec: force a re-pick excluding the stuck flag so the group
+				-- doesn't sit on a contested flag forever.
+				newT = PickGroupTarget(g1.target)
+				stuck = true
 			end
 		end
 		if newT and newT ~= g1.target then
 			print("[AISPAWN] GROUP_TARGET id=1 target=" .. tostring(newT)
-				.. " reason=" .. (Context.LostStamp[newT] and "recapture" or "priority")
+				.. " reason=" .. (stuck and "stuck" or (Context.LostStamp[newT] and "recapture" or "priority"))
 				.. " tier=" .. tostring(Context.LastPickTier) .. PidTag())
 			g1.target = newT
+			g1.targetSince = Elapsed()
 			ReorderGroup(1)
 		end
 	end
