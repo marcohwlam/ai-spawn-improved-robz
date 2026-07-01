@@ -44,11 +44,13 @@ local leadPick = GetUnitToSpawn(units)
 assert(leadPick.unit == "heavytk" or leadPick.unit == "medtk",
 	"LATE: front-load leads with armor when the army is below target")
 
--- Army already holds 2 armor (in no group) -> deficit gate blocks the front-load ->
--- the pick is not armor.
+-- Army already holds 3 armor (in no group) -> deficit gate blocks the front-load ->
+-- the pick is not armor. (Armor target for an 8-cap group in late is now
+-- floor((heavy1+medium2)/8*8+0.5) = 3, up from 2 before the medium weight bump.)
 Context.FieldUnits = {
 	a1 = { class = UnitClass.HeavyTank, unit = "heavytk" },
 	a2 = { class = UnitClass.Tank,      unit = "medtk", weight = "medium" },
+	a3 = { class = UnitClass.Tank,      unit = "medtk", weight = "medium" },
 }
 Context.Groups[1].armorLead = 2
 local gatedPick = GetUnitToSpawn(units)
