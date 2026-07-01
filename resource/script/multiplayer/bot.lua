@@ -7,6 +7,7 @@ Context = {
 	SquadTimers = {},
 	FieldUnits = {},  -- squadId -> unit entry, tracks live units we spawned
 	SpawnQueue = {},  -- FIFO descriptors for successful Spawn() calls; consumed by OnGameSpawn
+	SpawnLockQuant = -1, -- Context.MatchQuants value of the last claimed spawn slot this tick
 	SpawnFlags = {
 		isAirborne = false,
 		isRare = false,
@@ -55,7 +56,7 @@ local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spen
 -- Neutral-flag capper trickle: every NeutralInterval quants, if any flag is
 -- neutral, spawn one cheap single soldier ordered to grab a neutral flag.
 local NeutralIntervalSec  = 12   -- seconds between capper checks (longer cooldown: cappers trickle, not stream)
-local CapperCap       = 4       -- max live single-soldier cappers (prevents stacking)
+local CapperCap       = 6       -- max live single-soldier cappers (prevents stacking)
 -- Cappers re-pick their target far faster than the standard 3-minute rotation so a capper
 -- rolls on to the next neutral flag right after taking one, instead of idling on it.
 local CapperRotationPeriod = 15 * 1000 -- ms between capper target re-picks
@@ -491,6 +492,22 @@ function AtRifleOnField()
 	return n
 end
 
+-- The engine accepts at most ~1 Spawn per quant tick (see the WaveSpawnSpacing comment
+-- above). The wave/backfill, capper, officer, AT-rifle and deep-strike trickles are each
+-- independent `if` blocks in OnGameQuant and can otherwise all fire the same tick; when two
+-- Commands:Spawn calls land in one quant, the engine silently defers/reorders one of them,
+-- desyncing the FIFO Context.SpawnQueue so a later OnGameSpawn event pops the WRONG
+-- descriptor (e.g. a tank spawn consuming a capper's queue entry). That leaves the real
+-- spawn with no group/role assignment -- it never gets ordered anywhere and sits at base.
+-- These two functions serialize all spawn attempts to at most one claimed slot per quant.
+function SpawnSlotFree()
+	return Context.SpawnLockQuant ~= Context.MatchQuants
+end
+
+function ClaimSpawnSlot()
+	Context.SpawnLockQuant = Context.MatchQuants
+end
+
 function LiveCapperCount()
 	local n = 0
 	for _ in pairs(Context.Cappers) do n = n + 1 end
@@ -500,6 +517,10 @@ end
 -- Five-tier classification. Aux (AT, MG, sniper, officer, AA, artillery, flamer)
 -- returns nil and never counts toward the ratio.
 function TierOf(t)
+	-- Support half-tracks (scout/utility variants tagged support=true in bot.data.lua) ride
+	-- along as aux, same as MG/AT/officer -- they must never crowd out real light tanks in
+	-- the "light" ratio slot.
+	if t.support then return nil end
 	if t.class == UnitClass.Infantry and not t.flame then
 		if t.mech then return "light"
 		elseif t.inf == "smg" then return "smg"
@@ -1399,6 +1420,7 @@ function AttemptSpawn(tag)
 	if not Context.SpawnInfo then return "empty" end
 	local unit = Context.SpawnInfo
 	local ok = BotApi.Commands:Spawn(unit.unit, MaxSquadSize)
+	if ok then ClaimSpawnSlot() end
 	local field = GetFieldCounts()
 	print("[AISPAWN] " .. tag .. " mq=" .. tostring(Context.MatchQuants)
 		.. " phase=" .. CurrentPhase(Elapsed()).name
@@ -1484,12 +1506,14 @@ function DeepStrikeTrickle()
 	if LiveAirborneCount() >= DeepStrikeCap then return end
 	local u = GetAirborneUnit()
 	if not u then return end
+	if not SpawnSlotFree() then return end
 	Context.LastDeepStrikeTime = Elapsed()
 	Context.SpawnInfo = u
 	local ok = BotApi.Commands:Spawn(u.unit, MaxSquadSize)
 	print("[AISPAWN] DEEPSTRIKE try=" .. tostring(u.unit) .. " ok=" .. tostring(ok)
 		.. " pct=" .. string.format("%.2f", EnemyFlagPct()))
 	if ok then
+		ClaimSpawnSlot()
 		Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "airborne", info = u }
 	else
 		Context.FailCooldown[u.unit] = Elapsed()
@@ -1537,17 +1561,23 @@ function OnGameQuant()
 			Context.WaveCooldown = WaveSpawnSpacing
 			Context.FillGroup = GroupToFill()
 			if Context.FillGroup ~= nil and OwnedSquadCount() < CurrentSquadCap() then
-				local r = AttemptSpawn("SPAWN")
-				if r == "ok" then
-					Context.WaveRemaining = Context.WaveRemaining - 1
-					Context.WaveFails = 0
+				if not SpawnSlotFree() then
+					-- Another trickle already claimed this quant's one spawn slot; retry
+					-- next tick instead of racing it (see SpawnSlotFree comment).
+					Context.WaveCooldown = 0
 				else
-					-- "fail" (benched a unit) or "empty" (pool exhausted): a persistently
-					-- unspendable wave still ends after MaxWaveFails, but a single failure
-					-- just falls through to the next-cheapest pick on the following tick.
-					Context.WaveFails = Context.WaveFails + 1
-					if Context.WaveFails >= MaxWaveFails then
-						Context.WaveRemaining = 0
+					local r = AttemptSpawn("SPAWN")
+					if r == "ok" then
+						Context.WaveRemaining = Context.WaveRemaining - 1
+						Context.WaveFails = 0
+					else
+						-- "fail" (benched a unit) or "empty" (pool exhausted): a persistently
+						-- unspendable wave still ends after MaxWaveFails, but a single failure
+						-- just falls through to the next-cheapest pick on the following tick.
+						Context.WaveFails = Context.WaveFails + 1
+						if Context.WaveFails >= MaxWaveFails then
+							Context.WaveRemaining = 0
+						end
 					end
 				end
 			else
@@ -1564,7 +1594,7 @@ function OnGameQuant()
 		-- tick (the engine accepts ~1 spawn/quant). The rarer MG defender takes
 		-- priority, then the combat backfill toward the deficit tier.
 		if Elapsed() - Context.LastDefenderTime >= DefenderIntervalSec
-		and HeldFlagCount() > 0 and LiveMGCount() < DefenderCap then
+		and HeldFlagCount() > 0 and LiveMGCount() < DefenderCap and SpawnSlotFree() then
 			Context.LastDefenderTime = Elapsed()
 			local mg = GetMGUnit()
 			if mg then
@@ -1572,6 +1602,7 @@ function OnGameQuant()
 				local ok = BotApi.Commands:Spawn(mg.unit, MaxSquadSize)
 				print("[AISPAWN] DEFENDER try=" .. tostring(mg.unit) .. " ok=" .. tostring(ok))
 				if ok then
+					ClaimSpawnSlot()
 					Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "trickle", info = mg }
 				else
 					Context.FailCooldown[mg.unit] = Elapsed()
@@ -1580,7 +1611,7 @@ function OnGameQuant()
 			end
 		elseif Elapsed() - Context.LastArtyTime >= ArtyIntervalSec
 		and CurrentPhase(Elapsed()).name ~= "early"
-		and HeldFlagCount() > 0 and LiveArtyCount() < ArtyCap then
+		and HeldFlagCount() > 0 and LiveArtyCount() < ArtyCap and SpawnSlotFree() then
 			Context.LastArtyTime = Elapsed()
 			local art = GetArtyUnit()
 			if art then
@@ -1588,6 +1619,7 @@ function OnGameQuant()
 				local ok = BotApi.Commands:Spawn(art.unit, MaxSquadSize)
 				print("[AISPAWN] ARTY try=" .. tostring(art.unit) .. " ok=" .. tostring(ok))
 				if ok then
+					ClaimSpawnSlot()
 					Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "trickle", info = art }
 				else
 					Context.FailCooldown[art.unit] = Elapsed()
@@ -1595,7 +1627,7 @@ function OnGameQuant()
 				UpdateUnitToSpawn(Context.Purchase)
 			end
 		elseif Elapsed() - Context.LastWaveTime >= BackfillQuietSec
-		and Elapsed() - Context.LastBackfillTime >= BackfillIntervalSec then
+		and Elapsed() - Context.LastBackfillTime >= BackfillIntervalSec and SpawnSlotFree() then
 			Context.LastBackfillTime = Elapsed()
 			Context.FillGroup = GroupToFill()
 			if Context.FillGroup ~= nil and OwnedSquadCount() < CurrentSquadCap() then
@@ -1605,7 +1637,7 @@ function OnGameQuant()
 	end
 
 	-- Neutral-flag capper trickle, independent of the wave cadence.
-	if Elapsed() - Context.LastNeutralTime >= NeutralIntervalSec then
+	if Elapsed() - Context.LastNeutralTime >= NeutralIntervalSec and SpawnSlotFree() then
 		Context.LastNeutralTime = Elapsed()
 		if CountNeutralFlags() > 0 and LiveCapperCount() < CapperCap then
 			local line = GetCapperUnit()
@@ -1614,6 +1646,7 @@ function OnGameQuant()
 				print("[AISPAWN] CAPPER try=" .. tostring(line.unit)
 					.. " ok=" .. tostring(ok))
 				if ok then
+					ClaimSpawnSlot()
 					Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "capper", info = line }
 				end
 			end
@@ -1623,7 +1656,7 @@ function OnGameQuant()
 	-- Officer keep-alive trickle: after the unlock, maintain OfficerCap officers parked
 	-- at the spawn. They are spawned here (never via the ratio/aux pool) so OnGameSpawn
 	-- can withhold their capture order and leave them safe in the rear.
-	if Elapsed() - Context.LastOfficerTime >= OfficerIntervalSec then
+	if Elapsed() - Context.LastOfficerTime >= OfficerIntervalSec and SpawnSlotFree() then
 		Context.LastOfficerTime = Elapsed()
 		if Elapsed() >= OfficerUnlock
 		and OfficerOnField() < OfficerCap then
@@ -1633,6 +1666,7 @@ function OnGameQuant()
 				local ok = BotApi.Commands:Spawn(off.unit, MaxSquadSize)
 				print("[AISPAWN] OFFICER try=" .. tostring(off.unit) .. " ok=" .. tostring(ok))
 				if ok then
+					ClaimSpawnSlot()
 					Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "trickle", info = off }
 				else
 					Context.FailCooldown[off.unit] = Elapsed()
@@ -1644,7 +1678,7 @@ function OnGameQuant()
 
 	-- AT-rifle keep-alive: from mid phase on, keep one AT rifle fielded as a GROUP member so it
 	-- moves with and escorts the platoon (anti half-track) instead of wandering alone.
-	if Elapsed() - Context.LastAtRifleTime >= AtRifleIntervalSec then
+	if Elapsed() - Context.LastAtRifleTime >= AtRifleIntervalSec and SpawnSlotFree() then
 		Context.LastAtRifleTime = Elapsed()
 		if CurrentPhase(Elapsed()).name ~= "early"
 		and AtRifleOnField() < AtRifleCap
@@ -1666,6 +1700,7 @@ function OnGameQuant()
 					print("[AISPAWN] ATRIFLE try=" .. tostring(atr.unit)
 						.. " ok=" .. tostring(ok) .. " group=" .. tostring(slot))
 					if ok then
+						ClaimSpawnSlot()
 						-- AT rifle is aux: rides along to escort the platoon but does not fill
 						-- the group cap, so it is not a pending combat slot.
 						Context.SpawnQueue[#Context.SpawnQueue + 1] =
@@ -1738,9 +1773,12 @@ end
 
 -- Classify a flag into the attack tier ladder, or nil when it is not a valid
 -- candidate (not enemy-held and not a recently-lost neutral).
--- Tier 1: enemy holds/attacks an OWN-sector flag (home invaded).
--- Tier 2: a mine + frontier + CONTESTED flag the enemy holds (our lane front).
--- Tier 3: every other enemy/attacked flag (expand).
+-- Tier 1:   enemy holds/attacks an OWN-sector flag (home invaded).
+-- Tier 2:   a mine + frontier + CONTESTED flag the enemy holds (our lane front).
+-- Tier 2.5: a mine + CONTESTED flag in our lane whose frontier status is momentarily
+--           unconfirmed (still ranked ahead of tier 3 so a frontier gap never sends the
+--           group past the frontline at the enemy's OWN/base flag).
+-- Tier 3:   every other enemy/attacked flag (expand).
 function FlagTier(name)
 	local team = BotApi.Instance.team
 	local enemy = BotApi.Instance.enemyTeam
@@ -1757,9 +1795,17 @@ function FlagTier(name)
 	-- Natural frontline: a frontier flag in our own lane is a group target whether the enemy
 	-- holds it OR it is still neutral. This keeps groups fighting at the contested boundary
 	-- instead of marching past a neutral center straight into the enemy base.
-	if owner and owner.mine and label.sector == "CONTESTED" and IsFrontier(name)
-	   and (held or neutral) then
-		return 2
+	if owner and owner.mine and label.sector == "CONTESTED" and (held or neutral) then
+		if IsFrontier(name) then return 2 end
+		-- IsFrontier can go transiently false (a neighbor flag briefly recontested, or not
+		-- yet registered right at match start) even though this is still our lane's own
+		-- CONTESTED flag. Once we actually hold ground somewhere (HeldFlagCount() > 0 --
+		-- true from t=0 in a real match, since home starts owned), rank this flag just
+		-- behind a confirmed frontier flag but still strictly ahead of tier 3, so a
+		-- momentary frontier gap never sends the group past the frontline straight at the
+		-- enemy's OWN/base flag. Guarded on HeldFlagCount() so the all-neutral/nothing-
+		-- captured-anywhere case still falls through to nil below, unchanged.
+		if HeldFlagCount() > 0 then return 2.5 end
 	end
 	-- Everything below is a recapture/deep target: the flag must be enemy-held or freshly lost.
 	if not (held or lostNeutral) then return nil end
@@ -1786,7 +1832,7 @@ function PickGroupTarget(excludeName)
 			if tier then
 				local label = Context.FlagLabel[name] or {}
 				local key
-				if tier == 1 or tier == 2 then
+				if tier == 1 or tier == 2 or tier == 2.5 then
 					-- Within the frontier tier, contest enemy-held flags before advancing onto
 					-- still-neutral ones (bias held ahead); ties break by axis (rear first).
 					local heldHere = flag.occupant == BotApi.Instance.enemyTeam

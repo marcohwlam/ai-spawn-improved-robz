@@ -20,6 +20,10 @@ eq(TierOf({class = UnitClass.Vehicle, recharge = 30}), "light", "halftrack light
 eq(TierOf({class = UnitClass.Infantry, mech = true}), "light", "mech inf is light")
 eq(TierOf({class = UnitClass.ATInfantry}), nil, "AT is aux")
 eq(TierOf({class = UnitClass.MG}), nil, "MG is aux")
+eq(TierOf({class = UnitClass.Vehicle, support = true}), nil,
+	"support=true vehicle (early ger halftrack) is aux, not light -- must not crowd out pz2l")
+eq(TierOf({class = UnitClass.Tank, weight = "light"}), "light",
+	"a real light tank is unaffected by the support-vehicle carve-out")
 print("TierOf OK")
 
 -- CurrentPhase
