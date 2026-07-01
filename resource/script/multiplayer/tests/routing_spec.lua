@@ -53,14 +53,16 @@ BotApi.Scene.Flags = bastogne({ f10 = "b" })
 LabelFlags(); PartitionFlags()
 eq(PickGroupTarget(nil), "f10", "lone deep enemy flag still targeted")
 
--- Tier 3 closest-distance ordering: own f5 (home secure), enemy holds two non-frontier
--- CONTESTED flags. f1 (d^2=5586701) is closer to f5 than f3 (d^2=5970989); tier 3 picks f1.
+-- Natural frontline: own f5 (rear secure), enemy holds two DEEP CONTESTED flags (f1, f3).
+-- f8 is a still-NEUTRAL frontier flag (f5 is in f8.nb), so it is a tier-2 group target and
+-- beats the deeper enemy flags -- groups fight at the contested boundary, they do not march
+-- past a neutral center into deeper enemy ground.
 BotApi.Instance.playerId = 1
 Context.LostStamp = {}
 BotApi.Scene.Flags = bastogne({ f5 = "a", f1 = "b", f3 = "b" })
 LabelFlags(); PartitionFlags()
-eq(PickGroupTarget(nil), "f1", "tier3 picks the closer enemy flag")
-eq(Context.LastPickTier, 3, "f1 picked at tier 3")
+eq(PickGroupTarget(nil), "f8", "neutral frontier (frontline) beats deeper enemy flags")
+eq(Context.LastPickTier, 2, "frontline flag picked at tier 2")
 
 -- Tier 2 (CONTESTED frontier) beats tier 3 (ENEMY). Under base-tag labeling:
 -- f6 is an a-base flag (OWN for team a); held by team a it makes f7 a frontier flag,
@@ -122,22 +124,23 @@ UpdateGroupTargets()
 eq(Context.Groups[1].target, "f7", "preempt: tier3 f10 -> tier2 f7")
 eq(captured.s1, "f7", "ReorderGroup re-issued capture to member on switch")
 
--- No preemption within the same tier: a closer tier-3 flag does not displace the
--- current tier-3 target.
+-- No preemption within the same tier: a closer tier-3 flag does not displace the current
+-- tier-3 target. Own nothing so there is no neutral frontier (tier-2) flag in play; f4 and
+-- f10 are both deep ENEMY-sector tier-3 flags.
 Context.Groups = {}
 Context.SquadGroup = {}
-BotApi.Scene.Flags = bastogne({ f5 = "a", f1 = "b", f3 = "b" })   -- f1,f3 tier-3 enemy
+BotApi.Scene.Flags = bastogne({ f4 = "b", f10 = "b" })   -- f4,f10 tier-3 enemy, no owned flag
 LabelFlags(); PartitionFlags()
-Context.Groups[1] = { members = {}, size = 5, target = "f3", pending = 0 }
+Context.Groups[1] = { members = {}, size = 5, target = "f4", pending = 0 }
 UpdateGroupTargets()
-eq(Context.Groups[1].target, "f3", "same-tier closer candidate does not preempt")
+eq(Context.Groups[1].target, "f4", "same-tier closer candidate does not preempt")
 BotApi.Commands.CaptureFlag = realCapture
 
 -- === Task 2: PickSubTarget ===
 
 -- Sub picks the objective nearest to the main target, excluding the main target.
 Context.LostStamp = {}
-BotApi.Scene.Flags = bastogne({ f5 = "a", f1 = "b", f3 = "b" })   -- f1,f3 are tier-3 objectives
+BotApi.Scene.Flags = bastogne({ f1 = "b", f3 = "b" })   -- no owned flag: f1,f3 are the only (tier-3) objectives
 LabelFlags(); PartitionFlags()
 eq(PickSubTarget("f1"), "f3", "sub picks the other objective near main")
 
@@ -155,7 +158,7 @@ eq(PickSubTarget(nil), nil, "sub returns nil without a main target")
 Context.LostStamp = {}
 Context.SquadGroup = { s2 = 2 }
 Context.FieldUnits = { s2 = { unit = "y" } }
-BotApi.Scene.Flags = bastogne({ f5 = "a", f1 = "b", f3 = "b" })
+BotApi.Scene.Flags = bastogne({ f1 = "b", f3 = "b" })   -- no owned flag: f1,f3 are the only objectives
 LabelFlags(); PartitionFlags()
 Context.Groups = {}
 Context.Groups[1] = { members = {}, size = 5, target = "f1", pending = 0 }
