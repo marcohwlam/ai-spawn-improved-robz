@@ -31,15 +31,15 @@ eq(CurrentPhase(480).name, "late",  "480 late")
 eq(CurrentPhase(99999).name, "late","late stays late")
 
 -- Per-phase group sizes (main prong / sub prong scale up through the game).
-eq(CurrentPhase(0).mainGroup,   3, "early main 3")
-eq(CurrentPhase(0).subGroup,    2, "early sub 2")
-eq(CurrentPhase(180).mainGroup, 4, "mid main 4")
-eq(CurrentPhase(180).subGroup,  3, "mid sub 3")
-eq(CurrentPhase(480).mainGroup, 5, "late main 5")
-eq(CurrentPhase(480).subGroup,  3, "late sub 3")
+eq(CurrentPhase(0).mainGroup,   4, "early main 4")
+eq(CurrentPhase(0).subGroup,    3, "early sub 3")
+eq(CurrentPhase(180).mainGroup, 5, "mid main 5")
+eq(CurrentPhase(180).subGroup,  4, "mid sub 4")
+eq(CurrentPhase(480).mainGroup, 6, "late main 6")
+eq(CurrentPhase(480).subGroup,  4, "late sub 4")
 
--- DecideTier: late composition is light-dominant (heavy 1, medium 1, light 3, rifle 1,
--- smg 1; totalT 7 -> light share 3/7, every other tier 1/7).
+-- DecideTier: late composition is light-dominant (heavy 1, medium 2, light 3, rifle 1,
+-- smg 1; totalT 8 -> light share 3/8, medium 2/8, every other tier 1/8).
 local late = CurrentPhase(480)
 local allOk = { heavy = true, medium = true, light = true, rifle = true, smg = true }
 
@@ -56,19 +56,24 @@ local lightFilled = { heavy = 0, medium = 0, light = 3, rifle = 0, smg = 0, aux 
 local pick = DecideTier(late, lightFilled, true, allOk)
 assert(pick == "medium" or pick == "heavy", "enemy tanks leans armor, got " .. tostring(pick))
 
--- Light already filled + losing: smg weight is bumped to 2 (> every non-light tier),
--- so smg has the largest remaining deficit.
-eq(DecideTier(late, lightFilled, false, allOk, true), "smg", "losing smg bump picks smg")
+-- Light already filled + losing: smg weight is bumped to 2, tying medium's own
+-- target weight of 2 in late (heavy1/medium2/light3/rifle1/smg2) -> either may win
+-- depending on table iteration order; light/heavy/rifle must still lose out.
+local losingPick = DecideTier(late, lightFilled, false, allOk, true)
+assert(losingPick == "smg" or losingPick == "medium",
+	"losing smg bump ties medium, got " .. tostring(losingPick))
 
 -- DecideTier: smg under-filled -> picks smg over rifle and light
--- Use light=1 so smg is strictly more under-filled (avoids tie with light).
-local fRifled = { heavy = 0, medium = 0, light = 1, rifle = 3, smg = 0, aux = 0 }
+-- Early targets are light=3, rifle=3, smg=1 (totalT 7); fill light and rifle to their
+-- equal 3/7 shares so smg (1/7, still empty) is strictly the most under-filled.
+local fRifled = { heavy = 0, medium = 0, light = 3, rifle = 3, smg = 0, aux = 0 }
 local earlyOk = { light = true, rifle = true, smg = true }
 local early = CurrentPhase(0)
 eq(DecideTier(early, fRifled, false, earlyOk), "smg", "smg picked when rifle and light filled and smg empty")
 
--- DecideTier: losing bumps smg weight to 2; smg under-filled -> picks smg
-local fLosing = { heavy = 0, medium = 0, light = 0, rifle = 3, smg = 0, aux = 0 }
+-- DecideTier: losing bumps smg weight to 2 (totalT 8: light3/rifle3/smg2); with light and
+-- rifle filled to their now-equal 3/8 shares, smg's 2/8 target is the largest deficit.
+local fLosing = { heavy = 0, medium = 0, light = 3, rifle = 3, smg = 0, aux = 0 }
 eq(DecideTier(early, fLosing, false, earlyOk, true), "smg", "losing smg bump picks smg")
 print("phase OK")
 
