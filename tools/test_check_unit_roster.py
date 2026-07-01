@@ -146,3 +146,34 @@ finally:
 assert result.returncode == 1, (result.returncode, result.stdout, result.stderr)
 assert "MISMATCH" in result.stdout and "pz3_m" in result.stdout, result.stdout
 print("integration (regression) test OK")
+
+# 4d. Missing-faction-directory test: a faction with no .set files in the pak
+# must be skipped from the cross-check (warning only), not reported as
+# spurious NOT_FOUND/MISMATCH for every one of its units.
+import zipfile as _zipfile
+
+with _zipfile.ZipFile(PAK) as _z:
+    _member_names = [n for n in _z.namelist()
+                      if n.startswith("set/multiplayer/units/") and not n.startswith("set/multiplayer/units/jap/")]
+    _fd, _stub_pak = tempfile.mkstemp(suffix=".pak")
+    os.close(_fd)
+    with _zipfile.ZipFile(_stub_pak, "w") as _out:
+        for n in _member_names:
+            _out.writestr(n, _z.read(n))
+
+_stub_bot_data = _write_temp_lua(
+    '["jap"] = {\n'
+    '\t{priority=1.0, class=UnitClass.Infantry, unit="totally_made_up_id",},\n'
+    '},\n'
+)
+try:
+    result = subprocess.run(
+        ["python3", "check_unit_roster.py", _stub_pak, _stub_bot_data],
+        capture_output=True, text=True)
+finally:
+    os.remove(_stub_pak)
+    os.remove(_stub_bot_data)
+assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
+assert "no problems found" in result.stdout, result.stdout
+assert "WARNING" in result.stderr and "jap" in result.stderr, result.stderr
+print("integration (missing-faction skip) test OK")

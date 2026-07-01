@@ -112,11 +112,13 @@ def main():
     a = ap.parse_args()
 
     roster_index, roster_files = build_roster_index(a.pak, FACTIONS)
+    skip_factions = set()
     for f in FACTIONS:
         if not roster_files[f]:
-            print("WARNING: no roster .set files found for faction %r" % f, file=sys.stderr)
+            print("WARNING: no roster .set files found for faction %r -- skipping its cross-check" % f, file=sys.stderr)
+            skip_factions.add(f)
 
-    bot_units = extract_bot_units(a.bot_data)
+    bot_units = [u for u in extract_bot_units(a.bot_data) if u[0] not in skip_factions]
     problems = check(roster_index, bot_units)
 
     if not problems:
