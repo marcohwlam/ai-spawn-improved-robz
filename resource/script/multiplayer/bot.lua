@@ -60,6 +60,14 @@ local CapperCap       = 6       -- max live single-soldier cappers (prevents sta
 -- Cappers re-pick their target far faster than the standard 3-minute rotation so a capper
 -- rolls on to the next neutral flag right after taking one, instead of idling on it.
 local CapperRotationPeriod = 15 * 1000 -- ms between capper target re-picks
+-- Distance falloff (world units, same scale as ArtyReach) applied to capper target choice:
+-- a flag this far from our nearest owned ground has its priority halved. Without this, a
+-- capper is equally likely to be sent across the whole lane as to the flag next door; the
+-- far pick dies to opportunistic fire en route far more often, so that flag never finishes
+-- capping while a safer, closer one sits neutral and unpicked. Distance only narrows the
+-- choice among same-tier candidates -- it never promotes a farther enemy-held flag over a
+-- closer neutral one by more than the existing 5:1 base-weight gap allows.
+local CapperNearRange = 2500
 local GroupHomeGraceSec = 240 -- first N seconds: groups ignore OWN-sector (home) flags and push forward
 local GroupTargetStuckSec = 480 -- if a group can't take its target within this long, force a re-pick
 
@@ -341,10 +349,22 @@ function CapperFlagPriority(flag)
 	if label and label.sector == "ENEMY" then return 0 end
 	local owner = Context.FlagOwner[flag.name]
 	if owner and not owner.mine then return 0 end
-	if     IsNeutralFlag(flag)  then return 5.0
-	elseif IsEnemyFlag(flag)    then return 1.0
+	local base
+	if     IsNeutralFlag(flag)  then base = 5.0
+	elseif IsEnemyFlag(flag)    then base = 1.0
 	else                             return 0
 	end
+	-- Favor the nearest candidate flag to our own ground (see CapperNearRange comment):
+	-- skip the discount when position data is unavailable (unit-test flags, or a map
+	-- with no flag_sectors.lua coords) so the base weight is unaffected.
+	if label and label.x then
+		local d = NearestOwnedDist(label)
+		if d then
+			local r2 = CapperNearRange * CapperNearRange
+			base = base * r2 / (r2 + d)
+		end
+	end
+	return base
 end
 
 function CountNeutralFlags()
