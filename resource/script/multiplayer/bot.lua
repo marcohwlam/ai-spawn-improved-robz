@@ -57,8 +57,8 @@ Context = {
 -- unit landed and the rest were rejected, leaving 3000+ MP unspent at game end).
 -- Each wave attempts up to phase.budget units, one every WaveSpawnSpacing quants,
 -- and ends early only after MaxWaveFails spawns in a row fail (= truly out of MP).
-local WaveIntervalSec     = 60   -- seconds between wave starts
-local MinWaveIntervalSec  = 10   -- floor: never faster than ~10s even when far behind
+local WaveIntervalSec     = 90   -- seconds between wave starts
+local MinWaveIntervalSec  = 15   -- floor: never faster than ~15s even when far behind
 local WaveSpawnSpacing = 7      -- quants between spawns inside a wave (~0.1s)
 local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spent, end wave
 
@@ -89,7 +89,7 @@ local FailCooldownSec     = 10   -- seconds bench after a failed spawn
 -- BackfillInterval quants while idle to keep the composition near its ratio.
 -- A quiet window after each wave start keeps backfill from merging into the wave
 -- and reading as one continuous infantry stream.
-local BackfillIntervalSec = 8    -- seconds between idle backfill spawns
+local BackfillIntervalSec = 15   -- seconds between idle backfill spawns
 local BackfillQuietSec    = 30   -- seconds after a wave start before idle backfill may resume
 
 -- Between-wave defensive trickle: a small, capped number of mobile MG teams (mgs2)
