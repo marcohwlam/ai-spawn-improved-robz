@@ -96,6 +96,32 @@ eq(FlagTier("f5"), 1, "FlagTier: enemy on OWN flag is tier 1")
 eq(FlagTier("f10"), 3, "FlagTier: deep enemy flag is tier 3")
 eq(FlagTier("f2"), nil, "FlagTier: neutral flag with no LostStamp is not a candidate")
 
+-- Tier 2.5: a mine+CONTESTED lane flag whose IsFrontier neighbor isn't held by us YET (a
+-- transient frontier gap -- see the "attacked enemy home instead of the frontline" bug),
+-- but we already hold ground elsewhere (home f5). Must rank ahead of a genuine tier-3
+-- ENEMY flag so the group never leapfrogs the frontline straight at the enemy base.
+Context.LostStamp = {}
+BotApi.Scene.Flags = bastogne({ f5 = "a", f4 = "b" })
+LabelFlags(); PartitionFlags()
+Context.FlagOwner["f2"] = { mine = true } -- force lane ownership, isolate from band geometry
+eq(IsFrontier("f2"), false, "f2's neighbors (f4 enemy, f6/f7 unheld) are not ours yet")
+eq(FlagTier("f2"), 2.5, "FlagTier: CONTESTED lane flag with unconfirmed frontier is tier 2.5")
+eq(FlagTier("f4"), 3, "FlagTier: f4 (ENEMY base flag) is still tier 3")
+
+-- Guard: tier 2.5 requires holding ground somewhere first. With nothing captured anywhere
+-- (matches the "no enemy and no recently-lost -> nil" invariant below), the same lane flag
+-- must stay nil, not jump to 2.5.
+BotApi.Scene.Flags = bastogne({})
+LabelFlags(); PartitionFlags()
+Context.FlagOwner["f2"] = { mine = true }
+eq(FlagTier("f2"), nil, "tier 2.5 requires HeldFlagCount() > 0; holding nothing yields nil")
+
+-- Restore the f5/f10 scene the Home grace block below depends on (Tier 2.5 block above
+-- swapped in different flag states).
+Context.LostStamp = {}
+BotApi.Scene.Flags = bastogne({ f5 = "b", f10 = "b" })
+LabelFlags(); PartitionFlags()
+
 -- Home grace: in the first GroupHomeGraceSec, groups ignore OWN (home) flags entirely and
 -- push forward; the deep enemy flag is still a target. After the grace, home returns tier 1.
 Context.GameClock = 100   -- inside the grace window
