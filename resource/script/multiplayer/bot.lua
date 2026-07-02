@@ -765,11 +765,18 @@ function UpdateGroupTargets()
 	end
 end
 
--- The first group not yet at size, or nil if all full.
+-- The first group not yet at size, or nil if all full. Counts pending (queued, not yet landed
+-- via OnGameSpawn) fills alongside live members -- a wave drives multiple AttemptSpawn calls
+-- across the quants before any of them resolve, so checking live members alone kept re-selecting
+-- the same under-cap group on every one of those calls and let it massively overshoot g.size
+-- (observed ballooning a 3-member sub group to 6-8 members in one wave) while a co-existing
+-- group sat starved of that wave's budget. AttemptSpawn's own GROUP_FILL log line already
+-- computes size this way (GroupMemberCount(g) + (g.pending or 0)) for display; this just applies
+-- the same accounting to the fill decision itself.
 function GroupToFill()
 	for i = 1, MaxGroups do
 		local g = Context.Groups[i]
-		if g and GroupMemberCount(g) < g.size then return i end
+		if g and GroupMemberCount(g) + (g.pending or 0) < g.size then return i end
 	end
 	return nil
 end

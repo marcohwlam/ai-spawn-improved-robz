@@ -17,6 +17,16 @@ eq(GroupToFill(), nil, "2 combat + 1 aux -> full (aux does not count)")
 -- Drop a combat member: 1 combat + 1 aux < size 2 -> still needs filling.
 Context.Groups[1].members[2] = nil
 eq(GroupToFill(), 1, "1 combat + 1 aux -> still open")
+
+-- GroupToFill must count PENDING (queued, not-yet-landed) fills too, not just live members.
+-- A wave drives several AttemptSpawn calls across quants before any of them resolve via
+-- OnGameSpawn; without this, the same under-cap group keeps getting picked on every one of
+-- those calls and overshoots its size well past cap (observed ballooning a size-3 sub group
+-- to 6-8 members in one wave) while a co-existing group is starved of that wave's budget.
+Context.Groups = { [1] = { members = {}, auxMembers = {}, size = 3, pending = 3 } }
+eq(GroupToFill(), nil, "0 live + 3 pending == size 3 -> full, not re-selected")
+Context.Groups[1].pending = 2
+eq(GroupToFill(), 1, "0 live + 2 pending < size 3 -> still open for exactly 1 more")
 print("GroupToFill OK")
 
 -- OnGameSpawn: a combat group spawn decrements pending and counts toward the cap.
