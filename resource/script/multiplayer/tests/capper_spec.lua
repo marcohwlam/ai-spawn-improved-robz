@@ -41,6 +41,22 @@ Context.FlagOwner = {}
 eq(CapperFlagPriority(flag("u1", 0)), 5.0, "unknown map: neutral still 5.0")
 eq(CapperFlagPriority(flag("u2", "b")), 1.0, "unknown map: enemy-held still 1.0")
 
+-- AnyCapperTarget: gates the capper trickle on CapperFlagPriority itself, not a plain global
+-- neutral-flag count. A neutral flag sitting entirely in a teammate's partition must NOT be
+-- seen as a valid capper target (CapperFlagPriority returns 0 for it), even though a naive
+-- "any neutral flag exists" count would say yes -- that mismatch used to spawn a capper with
+-- nowhere to go (GetFlagToCapture returns nil, so it never received a CaptureFlag order at all).
+Context.FlagLabel = { theirs = { sector = "CONTESTED" } }
+Context.FlagOwner = { theirs = { mine = false } }
+BotApi.Scene.Flags = { flag("theirs", 0) }
+eq(AnyCapperTarget(), false, "neutral flag in teammate's lane alone: no capper target")
+
+Context.FlagLabel = { theirs = { sector = "CONTESTED" }, mine1 = { sector = "CONTESTED" } }
+Context.FlagOwner = { theirs = { mine = false }, mine1 = { mine = true } }
+BotApi.Scene.Flags = { flag("theirs", 0), flag("mine1", 0) }
+eq(AnyCapperTarget(), true, "neutral flag in our own lane: capper target exists")
+print("AnyCapperTarget OK")
+
 -- GetCapperUnit: a single-soldier riflemans2(<army>) for a known faction.
 Purchases = { { Units = { usa = { { unit = "riflemans(usa)", class = UnitClass.Infantry, line = true } } } } }
 BotApi.Instance.army = "usa"

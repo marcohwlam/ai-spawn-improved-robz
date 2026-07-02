@@ -191,6 +191,26 @@ eq(stuckCaptured.s3, "f10", "past 480s stuck: ReorderGroup re-issued capture to 
 eq(Context.Groups[1].targetSince, 481, "past 480s stuck: targetSince resets on re-pick")
 BotApi.Commands.CaptureFlag = realCap3
 
+-- Stuck timeout with a live sub group: the forced re-pick must exclude the sub group's
+-- target too, not just the stuck flag, so group 1 can never just be handed group 2's own
+-- objective (PickGroupTarget's second exclude param).
+Context.LostStamp = {}
+Context.Groups = {}
+Context.SquadGroup = { s3 = 1 }
+Context.FieldUnits = { s3 = { unit = "x" } }
+BotApi.Scene.Flags = bastogne({ f4 = "b", f10 = "b", f1 = "b" }) -- three tier-3 enemy flags, no owned flag
+LabelFlags(); PartitionFlags()
+local dualCaptured = {}
+local realCap4 = BotApi.Commands.CaptureFlag
+BotApi.Commands.CaptureFlag = function(_, squad, flag) dualCaptured[squad] = flag end
+Context.Groups[1] = { members = { s3 = true }, size = 5, target = "f4", pending = 0, targetSince = 0 }
+Context.Groups[2] = { members = {}, size = 3, target = "f10", pending = 0 }
+Context.GameClock = 481
+UpdateGroupTargets()
+eq(Context.Groups[1].target, "f1", "past 480s stuck with sub group: re-pick excludes stuck flag AND sub target")
+eq(dualCaptured.s3, "f1", "past 480s stuck with sub group: ReorderGroup re-issued to the non-excluded flag")
+BotApi.Commands.CaptureFlag = realCap4
+
 -- === Task 2: PickSubTarget ===
 
 -- Sub picks the objective nearest to the main target, excluding the main target.

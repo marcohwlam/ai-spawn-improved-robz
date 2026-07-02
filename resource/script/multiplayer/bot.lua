@@ -1,6 +1,15 @@
 require([[/script/multiplayer/bot.data]])
 require([[/script/multiplayer/flag_sectors]])
 
+-- Engine/API scope note: BotApi.Scene.Squads and BotApi.Scene.Flags are THIS bot's own view --
+-- Squads is every squad this player (bot) currently controls (not the whole match), and Flags
+-- is the full flag set with each flag's occupant/team-relative state. Each AI-controlled player
+-- in a match runs its own instance of this script, so there is no cross-bot or cross-team read
+-- here: BotApi.Commands:CaptureFlag/Spawn only ever act on this player's own units. This matters
+-- for the catch-all order loop at the bottom of OnGameQuant (squads with no SquadTimers entry,
+-- e.g. the pre-placed starting garrison that never went through AttemptSpawn/OnGameSpawn) --
+-- it is safe to blanket-order everything in BotApi.Scene.Squads precisely because that set is
+-- already scoped to this bot's own units.
 Context = {
 	Purchase = nil,
 	SpawnInfo = nil,
@@ -200,6 +209,12 @@ function PIter:advanceGroup()
 	self.rpt = self.purchases[self.idx].Repeat
 end
 
+-- Weighted-random pick. NOTE: the loop below can, in principle, run off the end without
+-- matching (float rounding on `bound / total` can leave the last boundary a hair under 1.0
+-- while rnd lands in that sliver) -- with a plain `for` returning nothing in that branch, this
+-- would silently hand back nil even though total > 0 and a valid item existed. Every caller
+-- (capper/flag targeting, unit picks) treats nil as "no candidate" and drops the order/spawn
+-- entirely, so falling off the end must never happen: always return the last item as a fallback.
 function GetRandomItem(items, getRate)
 	local item_rates = {}
 	local total = 0
@@ -215,6 +230,7 @@ function GetRandomItem(items, getRate)
 		bound = bound + item_rate.r
 		if rnd < bound / total then return item_rate.i end
 	end
+	return item_rates[#item_rates].i
 end
 
 function IsCapturedFlag(flag) return flag.occupant == BotApi.Instance.team end
@@ -367,12 +383,19 @@ function CapperFlagPriority(flag)
 	return base
 end
 
-function CountNeutralFlags()
-	local n = 0
-	for i, flag in pairs(BotApi.Scene.Flags) do
-		if IsNeutralFlag(flag) then n = n + 1 end
+-- True if some flag currently scores > 0 under CapperFlagPriority, i.e. a capper spawned
+-- right now would actually have somewhere to go. Gating the trickle on this (instead of a
+-- plain global neutral-flag count, which the trickle used to use) matters in a partitioned
+-- team game: a neutral flag can exist in a teammate's lane while THIS bot's own lane has none,
+-- so "a neutral flag exists somewhere" does not imply a capper has a legal target. Spawning on
+-- that mismatch produced a capper with no CaptureFlag order at all (GetFlagToCapture returns
+-- nil, CaptureFlag's `if flag then` just skips the order) -- one of the "capper stuck at base"
+-- symptoms, distinct from the SpawnQueue FIFO desync fixed earlier.
+function AnyCapperTarget()
+	for _, flag in pairs(BotApi.Scene.Flags) do
+		if CapperFlagPriority(flag) > 0 then return true end
 	end
-	return n
+	return false
 end
 
 -- Pick a cheap line-infantry unit from the current faction roster, or nil.
@@ -714,9 +737,10 @@ function UpdateGroupTargets()
 				newT = cand
 			elseif Elapsed() - (g1.targetSince or Elapsed()) > GroupTargetStuckSec then
 				-- Still attackable and no better tier, but the group hasn't taken it within
-				-- GroupTargetStuckSec: force a re-pick excluding the stuck flag so the group
-				-- doesn't sit on a contested flag forever.
-				newT = PickGroupTarget(g1.target)
+				-- GroupTargetStuckSec: force a re-pick excluding both the stuck flag and the
+				-- sub group's target, so escaping a stuck flag can't just hand group 1 group 2's
+				-- own objective (the plain `other` exclude above is not in scope here).
+				newT = PickGroupTarget(g1.target, other)
 				stuck = true
 			end
 		end
@@ -1669,7 +1693,7 @@ function OnGameQuant()
 	-- Neutral-flag capper trickle, independent of the wave cadence.
 	if Elapsed() - Context.LastNeutralTime >= NeutralIntervalSec and SpawnSlotFree() then
 		Context.LastNeutralTime = Elapsed()
-		if CountNeutralFlags() > 0 and LiveCapperCount() < CapperCap then
+		if AnyCapperTarget() and LiveCapperCount() < CapperCap then
 			local line = GetCapperUnit()
 			if line then
 				local ok = BotApi.Commands:Spawn(line.unit, 1) -- single-soldier capper entity (riflemans2)
@@ -1849,15 +1873,17 @@ function FlagTier(name)
 	return 3
 end
 
--- The group's attack flag, by the FlagTier ladder over candidates, excluding
--- excludeName. Within a tier, lower key wins (tier 1/2 by lane axis, tier 3 by
--- distance to our nearest owned flag, then recapture recency). Sets
--- Context.LastPickTier for logging. Returns nil only when no candidate exists.
-function PickGroupTarget(excludeName)
+-- The group's attack flag, by the FlagTier ladder over candidates, excluding excludeName and
+-- (optionally) excludeName2 -- the stuck-timeout re-pick in UpdateGroupTargets passes both the
+-- stuck flag AND the other group's target, so forcing group 1 off a stuck flag can never just
+-- hand it group 2's own objective. Within a tier, lower key wins (tier 1/2 by lane axis, tier 3
+-- by distance to our nearest owned flag, then recapture recency). Sets Context.LastPickTier for
+-- logging. Returns nil only when no candidate exists.
+function PickGroupTarget(excludeName, excludeName2)
 	local best
 	for _, flag in pairs(BotApi.Scene.Flags) do
 		local name = flag.name
-		if name ~= excludeName then
+		if name ~= excludeName and name ~= excludeName2 then
 			local tier = FlagTier(name)
 			if tier then
 				local label = Context.FlagLabel[name] or {}
