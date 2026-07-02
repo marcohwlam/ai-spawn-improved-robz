@@ -89,7 +89,7 @@ local FailCooldownSec     = 10   -- seconds bench after a failed spawn
 -- BackfillInterval quants while idle to keep the composition near its ratio.
 -- A quiet window after each wave start keeps backfill from merging into the wave
 -- and reading as one continuous infantry stream.
-local BackfillIntervalSec = 15   -- seconds between idle backfill spawns
+local BackfillIntervalSec = 30   -- seconds between idle backfill spawns
 local BackfillQuietSec    = 30   -- seconds after a wave start before idle backfill may resume
 
 -- Between-wave defensive trickle: a small, capped number of mobile MG teams (mgs2)
