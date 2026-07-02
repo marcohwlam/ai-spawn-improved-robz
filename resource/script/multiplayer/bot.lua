@@ -1477,6 +1477,16 @@ function AttemptSpawn(tag)
 			.. " try=" .. tostring(unit.unit)
 			.. " ok=" .. tostring(ok)
 			.. " size=" .. tostring(GroupMemberCount(g) + (g.pending or 0)) .. "/" .. tostring(g.size) .. PidTag())
+	elseif ok then
+		-- No group to attach to (FillGroup unset or pruned between the check and here):
+		-- still push a descriptor so the FIFO stays in sync with this successful Spawn.
+		-- Skipping this push was the root cause of a class of "wrong unit acts wrong"
+		-- bugs -- e.g. a later officer's descriptor getting consumed by this squad
+		-- (leaving the real officer to inherit a combat descriptor and get sent to
+		-- attack), or a combat unit inheriting an officer descriptor and sitting
+		-- parked at base forever -- since OnGameSpawn blindly pops the next queue
+		-- entry for every engine spawn event regardless of whether one was pushed.
+		Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "trickle", info = unit }
 	end
 	if not ok then
 		Context.FailCooldown[unit.unit] = Elapsed()
