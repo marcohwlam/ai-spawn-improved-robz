@@ -371,6 +371,8 @@ Purchases = {
 				{priority=1.5, class=UnitClass.Infantry,   unit="elite_guards_shock_assault(rus_guard)", inf="smg", elite=true,},
 				{priority=1.0, class=UnitClass.ATInfantry, unit="bazookers_piat(rus_guard)",},
 				{priority=1.0, class=UnitClass.MG      ,   unit="mgs2(rus_guard)",},
+				{priority=1.5, class=UnitClass.Vehicle,    unit="m3a1scout_guard", unlock=180, support=true,},
+				{priority=1.5, class=UnitClass.Vehicle,    unit="m3_guard", unlock=180, support=true,},
 				{priority=1.5, class=UnitClass.Tank,       unit="t60_guard",     min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="t70_guard",     min_income=1.0, unlock=440,},
 				{priority=1.0, class=UnitClass.ATTank,     unit="su76_guard",    min_income=1.5,},
