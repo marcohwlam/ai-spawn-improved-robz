@@ -1,0 +1,43 @@
+[h1]RobZ AI Overhaul — Smarter Bots, Real Waves (RobZ 1.30.x)[/h1]
+[b]Your RobZ bots just got a brain transplant.[/b]
+
+Tired of watching the AI dump its whole army in one suicidal blob, forget artillery exists, or leave three squads standing at base while the front line collapses? This mod rewrites the RobZ bot's spawn and targeting logic from the ground up so it plays like an actual opponent, not a manpower faucet.
+
+[h1]What changed[/h1]
+
+[b]🌊 Dynamic wave spawning[/b]
+No more manpower dumped the second it's earned. The bot banks up and deploys in coordinated waves, spread across ticks so the engine never rejects a burst — and the cadence reacts to the scoreboard: falling behind on flags shortens the gap between waves and swells the budget (up to 2.5x), so the bot throws more at the fight the worse it's losing.
+
+[b]🎯 Smarter targeting[/b]
+Groups push the frontier instead of leapfrogging past your lines into a deep, unsupported flag. A capture-settle grace period means the bot won't abandon a flag it just took the second the enemy sneezes at it.
+
+[b]📈 Phase-aware composition[/b]
+Early game is infantry and light armor. Mid game brings mediums. Late game the heavies roll out — all timed to each faction's real RobZ unlock schedule, not a generic guess.
+
+[b]🔧 Support units that actually show up[/b]
+Assault guns escort the main push instead of sulking at a backline artillery flag. Gun-halftracks and scout cars get their own guaranteed keep-alive slot instead of losing every draw to seven duplicate MG entries.
+
+[b]💰 Money-smart late game[/b]
+If a heavy tank keeps failing to spawn because the bot can't afford it, spawning pauses so manpower can actually bank up — instead of burning it all on filler while the heavy never lands.
+
+[b]🪖 Every trickle, tuned[/b]
+Point-defense MGs, AT rifles, cappers, officers, deep-strike airborne — each runs its own capped, independent trickle instead of starving each other for a shared pool.
+
+[b]🛡️ Crash-safe unit cap[/b]
+MoWAS2's engine is 32-bit — flood the field with enough squads across a big team game and it will OOM crash. Each bot enforces a hard live-squad ceiling tuned to stay well under that limit, so a 2v2 or 3v3 match with AI on every side won't tip the game over.
+
+[h1]Compatibility[/h1]
+[list]
+[*] Lua-only, zero entity assets — won't conflict with content mods
+[*] Requires [b]RobZ Realism Mod 1.30.10[/b] (don't use older RobZ versions) — load this mod [b]after[/b] RobZ so its bot overrides win
+[*] Game version 3.262
+[*] [b]RobZ maps/units only.[/b] The engine's bot API exposes flags and unit rosters, not a generic map format — targeting runs on precalculated flag-sector data for RobZ's own map pool (54 of 57 1v1/2v2/3v3 maps) plus this mod's roster/unlock data for RobZ's factions. A map outside that precalculated set falls back to degraded targeting. Other mods or vanilla maps aren't supported.
+[/list]
+
+[h1]Why trust it[/h1]
+Every fix ships with an offline test suite and gets cross-checked against RobZ's own unit data before release — this isn't guesswork, it's an AI that's actually been debugged.
+
+[h1]Source[/h1]
+Open source on GitHub: [url]https://github.com/marcohwlam/ai-spawn-improved-robz[/url]
+
+[i]Built on cbyyy2013's Better AI and frontlines AI concepts.[/i]
