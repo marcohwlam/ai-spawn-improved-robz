@@ -36,6 +36,7 @@ Context = {
 	LastOfficerTime = 0,  -- Elapsed() at last officer keep-alive
 	LastAtRifleTime = 0,  -- Elapsed() at last AT-rifle keep-alive
 	LastAssaultGunTime = 0, -- Elapsed() at last assault-gun escort keep-alive
+	LastSupportVehicleTime = 0, -- Elapsed() at last support-vehicle keep-alive
 	RatioCount = 0,    -- ratio (non-aux) units spawned since the last aux batch
 	Groups = {},        -- array of at most 2 live groups
 	SquadGroup = {},    -- squadId -> index into Context.Groups
@@ -134,6 +135,14 @@ local AtRifleCap      = 1       -- max live AT rifles kept
 -- safe-band flag via ArtilleryTargetFlag like wespe/hummel/sdkfz4.
 local AssaultGunIntervalSec = 40   -- seconds between assault-gun keep-alive checks
 local AssaultGunCap    = 1       -- max live assault guns kept
+
+-- Support-vehicle keep-alive: units tagged support=true (e.g. the 75mm gun halftracks) get
+-- their own guaranteed slot, mirroring the AT-rifle keep-alive shape, instead of competing
+-- for AuxPerCycle picks in the crowded generic aux pool (which also holds every faction's
+-- MG/AT/sniper/flame variants -- ger alone has 7 duplicate MG entries in there). Attaches to
+-- a group as an escort (aux member, does not fill the combat cap), same as the AT rifle.
+local SupportVehicleIntervalSec = 25   -- seconds between support-vehicle keep-alive checks
+local SupportVehicleCap    = 2       -- max live support vehicles kept
 
 local PAUSE_CLAMP = 2  -- seconds; an inter-quant os.time gap larger than this is a pause/hitch, skipped
 
@@ -589,6 +598,34 @@ function LiveAssaultGunCount()
 	local n = 0
 	for squadId, entry in pairs(Context.FieldUnits) do
 		if entry.class == UnitClass.ArtilleryTank and entry.assault then n = n + 1 end
+	end
+	return n
+end
+
+-- A support=true Vehicle from the current faction roster, unlocked and drawn by priority, or
+-- nil. Mirrors GetArtyUnit's unlock filtering (see that comment): the dedicated keep-alive
+-- trickle calls this directly instead of going through GetUnitToSpawn's pool, so it must apply
+-- the same unlockOk check itself.
+function GetSupportVehicleUnit()
+	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]
+	if not roster then return nil end
+	local elapsed = Elapsed()
+	local cands = {}
+	for i, t in pairs(roster) do
+		if t.class == UnitClass.Vehicle and t.support
+		and (t.unlock == nil or elapsed >= t.unlock) then
+			table.insert(cands, t)
+		end
+	end
+	if #cands == 0 then return nil end
+	return GetRandomItem(cands, function(t) return t.priority end)
+end
+
+-- Live support vehicles we have fielded (the support-vehicle cap).
+function LiveSupportVehicleCount()
+	local n = 0
+	for squadId, entry in pairs(Context.FieldUnits) do
+		if entry.class == UnitClass.Vehicle and entry.support then n = n + 1 end
 	end
 	return n
 end
@@ -1074,7 +1111,8 @@ function GetUnitToSpawn(units)
 				and not (t.class == UnitClass.Rare and Context.SpawnFlags.isRare)
 				and t.class ~= UnitClass.Howitzrer
 				and t.class ~= UnitClass.ArtilleryTank   -- SPGs disabled (poor bot AI use)
-				and t.class ~= UnitClass.Officer then    -- officers are parked by their own trickle
+				and t.class ~= UnitClass.Officer         -- officers are parked by their own trickle
+				and not (t.class == UnitClass.Vehicle and t.support) then -- support vehicles: own keep-alive trickle
 					table.insert(out, t)
 				end
 			end
@@ -1501,6 +1539,7 @@ function OnGameStart()
 	Context.LastOfficerTime = 0
 	Context.LastAtRifleTime = 0
 	Context.LastAssaultGunTime = 0
+	Context.LastSupportVehicleTime = 0
 	Context.RatioCount = 0
 	Context.AuxOwed = 0
 	Context.Cappers = {}
@@ -1858,6 +1897,43 @@ function OnGameQuant()
 					Context.FailCooldown[ag.unit] = Elapsed()
 				end
 				UpdateUnitToSpawn(Context.Purchase)
+			end
+		end
+	end
+
+	-- Support-vehicle keep-alive: guarantee these a real shot at the field (see
+	-- SupportVehicleIntervalSec comment) instead of leaving them to compete for AuxPerCycle
+	-- picks in the crowded generic aux pool. Same shape as the AT-rifle trickle above: attach
+	-- to a group as an escort, only spawn when a group exists to follow.
+	if Elapsed() - Context.LastSupportVehicleTime >= SupportVehicleIntervalSec and SpawnSlotFree() then
+		Context.LastSupportVehicleTime = Elapsed()
+		if LiveSupportVehicleCount() < SupportVehicleCap
+		and OwnedSquadCount() < CurrentSquadCap() then
+			local slot = GroupToFill()
+			if not slot then
+				for i = 1, MaxGroups do
+					if Context.Groups[i] then slot = i; break end
+				end
+			end
+			local g = slot and Context.Groups[slot]
+			if g then
+				local sv = GetSupportVehicleUnit()
+				if sv then
+					Context.SpawnInfo = sv
+					local ok = BotApi.Commands:Spawn(sv.unit, MaxSquadSize)
+					print("[AISPAWN] SUPPORTVEH try=" .. tostring(sv.unit)
+						.. " ok=" .. tostring(ok) .. " group=" .. tostring(slot))
+					if ok then
+						ClaimSpawnSlot()
+						-- Support vehicle is aux: rides along to escort the platoon but does not
+						-- fill the group cap, so it is not a pending combat slot.
+						Context.SpawnQueue[#Context.SpawnQueue + 1] =
+							{ kind = "group", info = sv, slot = slot, aux = true }
+					else
+						Context.FailCooldown[sv.unit] = Elapsed()
+					end
+					UpdateUnitToSpawn(Context.Purchase)
+				end
 			end
 		end
 	end
