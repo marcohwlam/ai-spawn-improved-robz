@@ -26,10 +26,20 @@ Purchases[1].Units["ger"] = { { priority = 1.0, class = UnitClass.Infantry, unit
 eq(GetArtyUnit(), nil, "GetArtyUnit nil when no arty")
 Purchases[1].Units["ger"] = saved
 
+-- Unlock-gating and dedup-against-live use a fixed 3-subtype roster (isolated from the real
+-- ger roster, which now also carries stuh42/brummbar_early) so these assertions don't need
+-- updating every time the faction's arty lineup grows.
+Purchases[1].Units["ger"] = {
+	{ priority = 0.8, class = UnitClass.ArtilleryTank, unit = "wespe",  unlock = 900 },
+	{ priority = 0.5, class = UnitClass.ArtilleryTank, unit = "hummel", unlock = 1200 },
+	{ priority = 0.3, class = UnitClass.ArtilleryTank, unit = "sdkfz4", unlock = 1200 },
+}
+
 -- GetArtyUnit is unlock-aware: before any subtype's unlock time, no candidate is eligible
 -- (the ARTY trickle used to call this blind, wasting attempts on units the engine would
 -- reject and, more importantly, letting an early-unlocking subtype win the priority pick
 -- purely because a later-unlocking one wasn't excluded from consideration yet).
+Context.FieldUnits = {}
 Context.GameClock = 0
 eq(GetArtyUnit(), nil, "GetArtyUnit nil before any subtype unlocks")
 
@@ -51,6 +61,7 @@ Context.FieldUnits = { [1] = { class = UnitClass.ArtilleryTank, unit = "wespe" }
                         [2] = { class = UnitClass.ArtilleryTank, unit = "hummel" } }
 eq(GetArtyUnit().unit, "sdkfz4", "only the un-fielded subtype remains once the other two are live")
 Context.FieldUnits = {}
+Purchases[1].Units["ger"] = saved
 print("arty spawn helpers OK")
 
 -- Trickle gate: a small re-implementation mirror would duplicate logic, so assert the

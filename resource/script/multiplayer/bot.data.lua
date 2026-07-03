@@ -149,6 +149,13 @@ Purchases = {
 				{priority=0.8, class=UnitClass.ArtilleryTank, unit="wespe", min_income=2.0, min_team=1, unlock=900, arty="field",},
 				{priority=0.5, class=UnitClass.ArtilleryTank, unit="hummel", min_income=2.0, min_team=1, unlock=1200, arty="heavy",},
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="sdkfz4", min_income=2.0, min_team=1, unlock=1200, arty="rocket",},
+				-- StuH42/Brummbär: close-support assault howitzers on a StuG/Panzer IV chassis.
+				-- The mod's own .set groups these under a "medium" tank purchase button, but
+				-- they are gun-howitzers (indirect/direct support fire), not line armor -- routed
+				-- here as ArtilleryTank aux like the other self-propelled guns above, not as a
+				-- "medium" ratio-tier tank competing with pz3n/pz4h.
+				{priority=0.6, class=UnitClass.ArtilleryTank, unit="stuh42", min_income=1.5, min_team=1, unlock=880, arty="field",},
+				{priority=0.4, class=UnitClass.ArtilleryTank, unit="brummbar_early", min_income=2.0, min_team=1, unlock=1120, arty="heavy",},
 				{priority=1.0, class=UnitClass.AATank,        unit="ostwind",             min_income=1.5, unlock=520,},
 			},
 			["ger_ss"] = {
@@ -191,6 +198,10 @@ Purchases = {
 				{priority=0.8, class=UnitClass.ArtilleryTank, unit="wespe_ss", min_income=2.0, min_team=1, unlock=900, arty="field",},
 				{priority=0.5, class=UnitClass.ArtilleryTank, unit="hummel_ss", min_income=2.0, min_team=1, unlock=1200, arty="heavy",},
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="sdkfz4_ss", min_income=2.0, min_team=1, unlock=1200, arty="rocket",},
+				-- StuH42/Brummbär (ss variants): same rationale as the ger entries above --
+				-- close-support assault howitzers routed as ArtilleryTank aux, not "medium" armor.
+				{priority=0.6, class=UnitClass.ArtilleryTank, unit="stuh42_ss", min_income=1.5, min_team=1, unlock=870, arty="field",},
+				{priority=0.4, class=UnitClass.ArtilleryTank, unit="brummbar_ss", min_income=2.0, min_team=1, unlock=1120, arty="heavy",},
 			},
 			["usa"] = {
 				{priority=2.0, class=UnitClass.Infantry,   unit="riflemans(usa)", line=true, inf="rifle",},
