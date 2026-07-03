@@ -65,6 +65,15 @@ local MinWaveIntervalSec  = 15   -- floor: never faster than ~15s even when far 
 local WaveSpawnSpacing = 7      -- quants between spawns inside a wave (~0.1s)
 local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spent, end wave
 
+-- Late-game heavy-tank affordability guard: repeatedly failing to spawn a heavy tank (too
+-- expensive right now) just burns the attempt cadence without ever landing one, while cheaper
+-- tiers keep draining MP behind it -- the army never actually accumulates enough to afford
+-- the heavy. After HeavyFailStreakLimit consecutive failed heavy-tier Spawn attempts in the
+-- late phase, pause ALL spawning (every trickle funnels through SpawnSlotFree) for
+-- SpawnPauseSec so MP can bank up toward the heavy instead of being spent on filler.
+local HeavyFailStreakLimit = 3     -- consecutive failed late-phase heavy Spawn attempts => pause
+local SpawnPauseSec        = 150   -- seconds all spawning is paused once the streak trips
+
 -- Neutral-flag capper trickle: every NeutralInterval quants, if any flag is
 -- neutral, spawn one cheap single soldier ordered to grab a neutral flag.
 local NeutralIntervalSec  = 12   -- seconds between capper checks (longer cooldown: cappers trickle, not stream)
@@ -659,6 +668,7 @@ end
 -- spawn with no group/role assignment -- it never gets ordered anywhere and sits at base.
 -- These two functions serialize all spawn attempts to at most one claimed slot per quant.
 function SpawnSlotFree()
+	if Elapsed() < (Context.SpawnPauseUntil or 0) then return false end
 	return Context.SpawnLockQuant ~= Context.MatchQuants
 end
 
@@ -1556,6 +1566,9 @@ function OnGameStart()
 	Context.WaveRemaining = 0
 	Context.WaveFails = 0
 	Context.WaveCooldown = 0
+	Context.ConsecutiveHeavyFails = 0
+	Context.HeavyFailStreak = {}
+	Context.SpawnPauseUntil = 0
 	Context.LastNeutralTime = 0
 	Context.LastBackfillTime = 0
 	Context.LastDefenderTime = 0
@@ -1649,6 +1662,30 @@ function AttemptSpawn(tag)
 		-- parked at base forever -- since OnGameSpawn blindly pops the next queue
 		-- entry for every engine spawn event regardless of whether one was pushed.
 		Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "trickle", info = unit }
+	end
+	if CurrentPhase(Elapsed()).name == "late" and TierOf(unit) == "heavy" then
+		if ok then
+			Context.HeavyFailStreak = {}
+			Context.ConsecutiveHeavyFails = 0
+		else
+			-- Track DISTINCT heavy unit ids tried, not just a raw fail count: a single too-
+			-- expensive heavy failing 3x in a row (still benched by FailCooldown each retry)
+			-- says nothing about affordability of the OTHER heavies in the roster, so only
+			-- trip the pause once several different heavies have all failed. Rosters with
+			-- few heavy types (some have just one) would otherwise never reach that distinct
+			-- count -- ConsecutiveHeavyFails is the fallback ceiling for those.
+			Context.HeavyFailStreak = Context.HeavyFailStreak or {}
+			Context.HeavyFailStreak[unit.unit] = true
+			local distinct = 0
+			for _ in pairs(Context.HeavyFailStreak) do distinct = distinct + 1 end
+			Context.ConsecutiveHeavyFails = (Context.ConsecutiveHeavyFails or 0) + 1
+			if distinct >= HeavyFailStreakLimit or Context.ConsecutiveHeavyFails >= HeavyFailStreakLimit * 3 then
+				Context.SpawnPauseUntil = Elapsed() + SpawnPauseSec
+				Context.HeavyFailStreak = {}
+				Context.ConsecutiveHeavyFails = 0
+				print("[AISPAWN] SPAWNPAUSE heavy-fail-streak until=" .. tostring(Context.SpawnPauseUntil))
+			end
+		end
 	end
 	if not ok then
 		Context.FailCooldown[unit.unit] = Elapsed()
