@@ -141,8 +141,8 @@ local AssaultGunCap    = 1       -- max live assault guns kept
 -- for AuxPerCycle picks in the crowded generic aux pool (which also holds every faction's
 -- MG/AT/sniper/flame variants -- ger alone has 7 duplicate MG entries in there). Attaches to
 -- a group as an escort (aux member, does not fill the combat cap), same as the AT rifle.
-local SupportVehicleIntervalSec = 25   -- seconds between support-vehicle keep-alive checks
-local SupportVehicleCap    = 2       -- max live support vehicles kept
+local SupportVehicleIntervalSec = 120  -- seconds between support-vehicle keep-alive checks
+local SupportVehicleCap    = 1       -- max live support vehicles kept
 
 local PAUSE_CLAMP = 2  -- seconds; an inter-quant os.time gap larger than this is a pause/hitch, skipped
 
