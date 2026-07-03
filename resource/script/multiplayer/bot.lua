@@ -1903,14 +1903,26 @@ function OnGameQuant()
 	-- push's direct-fire support, not a sub-prong add-on.
 	if Elapsed() - Context.LastAssaultGunTime >= AssaultGunIntervalSec and SpawnSlotFree() then
 		Context.LastAssaultGunTime = Elapsed()
+		-- TEMP diagnostic (remove once the "2 live from one instance" report is confirmed or
+		-- ruled out): pid disambiguates this instance from a teammate's in a shared log, and
+		-- the live squadId list proves whether LiveAssaultGunCount is under- or over-counting
+		-- at the exact moment the cap gate is evaluated.
 		if LiveAssaultGunCount() < AssaultGunCap
 		and OwnedSquadCount() < CurrentSquadCap()
 		and Context.Groups[1] then
+			local liveIds = {}
+			for sid, entry in pairs(Context.FieldUnits) do
+				if entry.class == UnitClass.ArtilleryTank and entry.assault then
+					liveIds[#liveIds + 1] = tostring(sid)
+				end
+			end
 			local ag = GetAssaultGunUnit()
 			if ag then
 				Context.SpawnInfo = ag
 				local ok = BotApi.Commands:Spawn(ag.unit, MaxSquadSize)
-				print("[AISPAWN] ASSAULTGUN try=" .. tostring(ag.unit) .. " ok=" .. tostring(ok))
+				print("[AISPAWN] ASSAULTGUN try=" .. tostring(ag.unit) .. " ok=" .. tostring(ok)
+					.. " pid=" .. tostring(BotApi.Instance.playerId)
+					.. " liveBefore=" .. table.concat(liveIds, ","))
 				if ok then
 					ClaimSpawnSlot()
 					-- Assault gun is aux: rides along to escort the main group but does not
@@ -2210,6 +2222,17 @@ function OnGameSpawn(args)
 	Context.SpawnFlags.isRare = false
 	if info then
 		Context.FieldUnits[args.squadId] = info
+		-- TEMP diagnostic, pairs with the ASSAULTGUN try= print above: confirms which
+		-- physical squadId the FIFO queue actually attached this descriptor to, and whether
+		-- the descriptor popped here is the one this event's spawn actually expected (a stale
+		-- Context.SpawnInfo fallback here would mean the queue desynced -- see the
+		-- SpawnSlotFree comment on why that used to happen).
+		if info.class == UnitClass.ArtilleryTank and info.assault then
+			print("[AISPAWN] ASSAULTGUN_SPAWNED squad=" .. tostring(args.squadId)
+				.. " unit=" .. tostring(info.unit)
+				.. " pid=" .. tostring(BotApi.Instance.playerId)
+				.. " viaQueue=" .. tostring(d ~= nil))
+		end
 	end
 	if d and d.kind == "capper" then
 		Context.Cappers[args.squadId] = true
