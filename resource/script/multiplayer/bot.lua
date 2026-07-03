@@ -35,6 +35,7 @@ Context = {
 	AirborneSquads = {},    -- squadId -> true, elite airborne squads sent at enemy bases
 	LastOfficerTime = 0,  -- Elapsed() at last officer keep-alive
 	LastAtRifleTime = 0,  -- Elapsed() at last AT-rifle keep-alive
+	LastAssaultGunTime = 0, -- Elapsed() at last assault-gun escort keep-alive
 	RatioCount = 0,    -- ratio (non-aux) units spawned since the last aux batch
 	Groups = {},        -- array of at most 2 live groups
 	SquadGroup = {},    -- squadId -> index into Context.Groups
@@ -97,7 +98,14 @@ local BackfillQuietSec    = 30   -- seconds after a wave start before idle backf
 local DefenderIntervalSec = 20   -- seconds between defender checks
 local DefenderCap      = 3       -- max live MG teams the bot keeps fielded
 local ArtyIntervalSec  = 45      -- seconds between artillery trickle checks (rarer than MG)
-local ArtyCap          = 1       -- max live artillery pieces the bot keeps fielded
+-- max live artillery pieces the bot keeps fielded, shared across every arty subtype (field/
+-- heavy/rocket) a faction has. At 1, the first subtype to unlock and win GetArtyUnit's
+-- priority-weighted pick (usually the cheapest/earliest, e.g. wespe_ss at unlock=900) fills
+-- the only slot and, as long as it survives, permanently locks out every other subtype for
+-- the rest of the match -- e.g. ger_ss's sdkfz4_ss rocket halftrack (unlock=1200, lowest
+-- priority of the three) would essentially never get a turn. 2 gives a second subtype room
+-- to appear once its own unlock passes, without turning artillery into a real force pillar.
+local ArtyCap          = 2       -- max live artillery pieces the bot keeps fielded
 local DeepStrikePct        = 0.65   -- trigger deep-strike when enemy holds > this share of all flags
 local DeepStrikeIntervalSec = 180   -- seconds between airborne drops (frontline-equivalent of c(900) x 0.2)
 local DeepStrikeCap        = 2      -- max live airborne squads kept fielded
@@ -119,6 +127,13 @@ local OfficerCap      = 1       -- max live officers
 -- AT-rifle keep-alive: from mid phase on, keep one AT rifle on the field (anti half-track).
 local AtRifleIntervalSec  = 20   -- seconds between AT-rifle keep-alive checks
 local AtRifleCap      = 1       -- max live AT rifles kept
+
+-- Assault-gun escort keep-alive: units tagged assault=true (stuh42, brummbar, ...) are
+-- close-support gun-howitzers, not backline artillery -- they escort a group and follow its
+-- target, same shape as the AT-rifle keep-alive above, instead of parking at a rear
+-- safe-band flag via ArtilleryTargetFlag like wespe/hummel/sdkfz4.
+local AssaultGunIntervalSec = 40   -- seconds between assault-gun keep-alive checks
+local AssaultGunCap    = 1       -- max live assault guns kept
 
 local PAUSE_CLAMP = 2  -- seconds; an inter-quant os.time gap larger than this is a pause/hitch, skipped
 
@@ -453,23 +468,39 @@ function LiveMGCount()
 	return n
 end
 
--- An artillery unit from the current faction roster, drawn by priority, or nil.
+-- An artillery unit from the current faction roster, drawn by priority, or nil. Filters out
+-- subtypes not yet unlocked (GetUnitToSpawn's pool does this for every other unit; the arty
+-- trickle calls this directly instead, so it must apply the same check itself) and any
+-- subtype already fielded live, so with ArtyCap > 1 the extra slot(s) go toward variety
+-- instead of a second copy of whichever subtype won the last pick.
 function GetArtyUnit()
 	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]
 	if not roster then return nil end
+	local elapsed = Elapsed()
+	local live = {}
+	for squadId, entry in pairs(Context.FieldUnits) do
+		if entry.class == UnitClass.ArtilleryTank then live[entry.unit] = true end
+	end
 	local arty = {}
 	for i, t in pairs(roster) do
-		if t.class == UnitClass.ArtilleryTank then table.insert(arty, t) end
+		if t.class == UnitClass.ArtilleryTank and not t.assault -- assault guns escort the
+		-- main group instead (see GetAssaultGunUnit); they are not backline artillery.
+		and (t.unlock == nil or elapsed >= t.unlock)
+		and not live[t.unit] then
+			table.insert(arty, t)
+		end
 	end
 	if #arty == 0 then return nil end
 	return GetRandomItem(arty, function(t) return t.priority end)
 end
 
--- Live artillery pieces we have fielded (the artillery cap).
+-- Live backline artillery pieces we have fielded (the artillery cap). Excludes assault=true
+-- guns (stuh42, brummbar, ...) -- those escort a group under their own separate cap
+-- (AssaultGunCap), not this backline one.
 function LiveArtyCount()
 	local n = 0
 	for squadId, entry in pairs(Context.FieldUnits) do
-		if entry.class == UnitClass.ArtilleryTank then n = n + 1 end
+		if entry.class == UnitClass.ArtilleryTank and not entry.assault then n = n + 1 end
 	end
 	return n
 end
@@ -531,6 +562,33 @@ function AtRifleOnField()
 		if entry.class == UnitClass.ATInfantry and string.find(entry.unit, "at_rifle", 1, true) then
 			n = n + 1
 		end
+	end
+	return n
+end
+
+-- An assault=true ArtilleryTank (close-support gun-howitzer: stuh42, brummbar, ...) from the
+-- current faction roster, unlocked and drawn by priority, or nil. Mirrors GetArtyUnit's
+-- unlock filtering, but pulls from the disjoint assault=true set instead of the backline set.
+function GetAssaultGunUnit()
+	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]
+	if not roster then return nil end
+	local elapsed = Elapsed()
+	local cands = {}
+	for i, t in pairs(roster) do
+		if t.class == UnitClass.ArtilleryTank and t.assault
+		and (t.unlock == nil or elapsed >= t.unlock) then
+			table.insert(cands, t)
+		end
+	end
+	if #cands == 0 then return nil end
+	return GetRandomItem(cands, function(t) return t.priority end)
+end
+
+-- Live assault guns we have fielded (the assault-gun cap).
+function LiveAssaultGunCount()
+	local n = 0
+	for squadId, entry in pairs(Context.FieldUnits) do
+		if entry.class == UnitClass.ArtilleryTank and entry.assault then n = n + 1 end
 	end
 	return n
 end
@@ -1442,6 +1500,7 @@ function OnGameStart()
 	Context.AirborneSquads = {}
 	Context.LastOfficerTime = 0
 	Context.LastAtRifleTime = 0
+	Context.LastAssaultGunTime = 0
 	Context.RatioCount = 0
 	Context.AuxOwed = 0
 	Context.Cappers = {}
@@ -1771,6 +1830,34 @@ function OnGameQuant()
 					end
 					UpdateUnitToSpawn(Context.Purchase)
 				end
+			end
+		end
+	end
+
+	-- Assault-gun escort keep-alive: close-support gun-howitzers (stuh42, brummbar, ...)
+	-- attach specifically to the MAIN group (id 1) and follow its target, unlike the AT rifle
+	-- above which is fine escorting whichever group needs it -- these are meant as the main
+	-- push's direct-fire support, not a sub-prong add-on.
+	if Elapsed() - Context.LastAssaultGunTime >= AssaultGunIntervalSec and SpawnSlotFree() then
+		Context.LastAssaultGunTime = Elapsed()
+		if LiveAssaultGunCount() < AssaultGunCap
+		and OwnedSquadCount() < CurrentSquadCap()
+		and Context.Groups[1] then
+			local ag = GetAssaultGunUnit()
+			if ag then
+				Context.SpawnInfo = ag
+				local ok = BotApi.Commands:Spawn(ag.unit, MaxSquadSize)
+				print("[AISPAWN] ASSAULTGUN try=" .. tostring(ag.unit) .. " ok=" .. tostring(ok))
+				if ok then
+					ClaimSpawnSlot()
+					-- Assault gun is aux: rides along to escort the main group but does not
+					-- fill the group cap, so it is not a pending combat slot.
+					Context.SpawnQueue[#Context.SpawnQueue + 1] =
+						{ kind = "group", info = ag, slot = 1, aux = true }
+				else
+					Context.FailCooldown[ag.unit] = Elapsed()
+				end
+				UpdateUnitToSpawn(Context.Purchase)
 			end
 		end
 	end

@@ -4,15 +4,22 @@ local function eq(got, want, msg)
 	if got ~= want then error((msg or "") .. " expected " .. tostring(want) .. " got " .. tostring(got)) end
 end
 
--- LiveArtyCount counts only ArtilleryTank entries in FieldUnits
+-- LiveArtyCount counts only ArtilleryTank entries in FieldUnits, excluding assault=true guns
+-- (those escort a group under AssaultGunCap, not the backline ArtyCap).
 Context.FieldUnits = {
 	[1] = { class = UnitClass.ArtilleryTank, unit = "wespe" },
 	[2] = { class = UnitClass.MG, unit = "mgs2(ger)" },
 	[3] = { class = UnitClass.ArtilleryTank, unit = "hummel" },
+	[4] = { class = UnitClass.ArtilleryTank, unit = "stuh42", assault = true },
 }
-eq(LiveArtyCount(), 2, "LiveArtyCount")
+eq(LiveArtyCount(), 2, "LiveArtyCount excludes assault=true guns")
+eq(LiveAssaultGunCount(), 1, "LiveAssaultGunCount counts only assault=true ArtilleryTank entries")
+Context.FieldUnits = {}
 
--- GetArtyUnit returns an ArtilleryTank row from the current army roster (harness army = "ger")
+-- GetArtyUnit returns an ArtilleryTank row from the current army roster (harness army = "ger").
+-- All of ger's arty subtypes unlock at 900/1200s, so past-unlock elapsed time is required.
+Context.FieldUnits = {}
+Context.GameClock = 1200
 local u = GetArtyUnit()
 assert(u ~= nil, "GetArtyUnit returned nil")
 eq(u.class, UnitClass.ArtilleryTank, "GetArtyUnit class")
@@ -21,6 +28,59 @@ eq(u.class, UnitClass.ArtilleryTank, "GetArtyUnit class")
 local saved = Purchases[1].Units["ger"]
 Purchases[1].Units["ger"] = { { priority = 1.0, class = UnitClass.Infantry, unit = "x" } }
 eq(GetArtyUnit(), nil, "GetArtyUnit nil when no arty")
+Purchases[1].Units["ger"] = saved
+
+-- Unlock-gating and dedup-against-live use a fixed 3-subtype roster (isolated from the real
+-- ger roster, which now also carries stuh42/brummbar_early) so these assertions don't need
+-- updating every time the faction's arty lineup grows.
+Purchases[1].Units["ger"] = {
+	{ priority = 0.8, class = UnitClass.ArtilleryTank, unit = "wespe",  unlock = 900 },
+	{ priority = 0.5, class = UnitClass.ArtilleryTank, unit = "hummel", unlock = 1200 },
+	{ priority = 0.3, class = UnitClass.ArtilleryTank, unit = "sdkfz4", unlock = 1200 },
+}
+
+-- GetArtyUnit is unlock-aware: before any subtype's unlock time, no candidate is eligible
+-- (the ARTY trickle used to call this blind, wasting attempts on units the engine would
+-- reject and, more importantly, letting an early-unlocking subtype win the priority pick
+-- purely because a later-unlocking one wasn't excluded from consideration yet).
+Context.FieldUnits = {}
+Context.GameClock = 0
+eq(GetArtyUnit(), nil, "GetArtyUnit nil before any subtype unlocks")
+
+-- Only wespe (unlock=900) is eligible at t=900; hummel/sdkfz4 (unlock=1200) are not yet.
+Context.GameClock = 900
+eq(GetArtyUnit().unit, "wespe", "GetArtyUnit only offers the unlocked subtype")
+
+-- GetArtyUnit excludes a subtype already fielded live, so the ArtyCap>1 slack goes toward a
+-- DIFFERENT subtype instead of a duplicate of whatever already won the last pick -- this is
+-- what lets a low-priority, late-unlocking subtype (e.g. sdkfz4, the rocket halftrack) ever
+-- get picked once wespe has already claimed a slot and survives for the rest of the match.
+Context.GameClock = 1200
+Context.FieldUnits = { [1] = { class = UnitClass.ArtilleryTank, unit = "wespe" } }
+local picks = {}
+for i = 1, 1, 1 do picks[GetArtyUnit().unit] = true end
+eq(picks["wespe"], nil, "already-fielded subtype excluded from GetArtyUnit's pool")
+
+Context.FieldUnits = { [1] = { class = UnitClass.ArtilleryTank, unit = "wespe" },
+                        [2] = { class = UnitClass.ArtilleryTank, unit = "hummel" } }
+eq(GetArtyUnit().unit, "sdkfz4", "only the un-fielded subtype remains once the other two are live")
+Context.FieldUnits = {}
+
+-- GetArtyUnit and GetAssaultGunUnit pull from disjoint sets: assault=true guns never appear
+-- in the backline pool, and non-assault arty never appears in the escort pool.
+Purchases[1].Units["ger"] = {
+	{ priority = 0.8, class = UnitClass.ArtilleryTank, unit = "wespe",  unlock = 0 },
+	{ priority = 0.6, class = UnitClass.ArtilleryTank, unit = "stuh42", unlock = 0, assault = true },
+}
+Context.GameClock = 0
+local artySeen, assaultSeen = {}, {}
+for i = 1, 20 do artySeen[GetArtyUnit().unit] = true end
+for i = 1, 20 do assaultSeen[GetAssaultGunUnit().unit] = true end
+eq(artySeen["wespe"], true, "backline pool includes the non-assault subtype")
+eq(artySeen["stuh42"], nil, "backline pool never includes an assault=true gun")
+eq(assaultSeen["stuh42"], true, "escort pool includes the assault=true gun")
+eq(assaultSeen["wespe"], nil, "escort pool never includes a non-assault backline subtype")
+
 Purchases[1].Units["ger"] = saved
 print("arty spawn helpers OK")
 
@@ -132,3 +192,15 @@ BotApi.Scene.Flags = { { name = "T", occupant = 2 }, { name = "oNear", occupant 
 routed = "UNSET"; CaptureFlag(7)
 eq(routed, "UNSET", "artillery issues no order when no flag is safe -> parks at base")
 print("CaptureFlag artillery routing OK")
+
+-- CaptureFlag: an assault=true gun that is a GROUP member follows the group's target instead
+-- of the ArtilleryTargetFlag safe-band routing above -- close-support escort, not backline
+-- artillery. Group membership is checked before IsDefender in CaptureFlag, so this holds
+-- regardless of what ArtilleryFlagPriority would have said for the squad's own position.
+Context.FieldUnits = { [8] = { class = UnitClass.ArtilleryTank, unit = "stuh42", assault = true, arty = "field" } }
+Context.SquadGroup = { [8] = 1 }
+Context.Groups = { [1] = { members = { [8] = true }, auxMembers = { [8] = true }, size = 4, target = "mainTarget" } }
+BotApi.Scene.Flags = { { name = "mainTarget", occupant = 2 } }
+routed = nil; CaptureFlag(8)
+eq(routed, "mainTarget", "assault gun in a group follows the group's target, not a rear safe-band flag")
+print("CaptureFlag assault-gun escort routing OK")
