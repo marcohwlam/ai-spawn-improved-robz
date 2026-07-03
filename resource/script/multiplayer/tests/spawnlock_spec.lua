@@ -24,3 +24,19 @@ Context.MatchQuants = 6
 eq(SpawnSlotFree(), true, "slot frees automatically on the next quant")
 
 print("spawnlock OK")
+
+-- SpawnPauseUntil (heavy-fail-streak affordability guard): while Elapsed() < SpawnPauseUntil,
+-- SpawnSlotFree must return false regardless of the per-quant claim state, so every trickle
+-- (they all gate on SpawnSlotFree) is paused, not just the wave driver.
+Context.GameClock = 100
+Context.MatchQuants = 7
+Context.SpawnPauseUntil = 250
+eq(SpawnSlotFree(), false, "paused: slot unavailable even on a fresh, unclaimed quant")
+
+Context.GameClock = 250
+eq(SpawnSlotFree(), true, "pause ends exactly at SpawnPauseUntil")
+
+Context.GameClock = 0
+Context.SpawnPauseUntil = 0
+eq(SpawnSlotFree(), true, "SpawnPauseUntil=0 (default/unset) never blocks")
+print("spawn pause gate OK")
