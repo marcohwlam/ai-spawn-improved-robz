@@ -4,13 +4,17 @@ local function eq(got, want, msg)
 	if got ~= want then error((msg or "") .. " expected " .. tostring(want) .. " got " .. tostring(got)) end
 end
 
--- LiveArtyCount counts only ArtilleryTank entries in FieldUnits
+-- LiveArtyCount counts only ArtilleryTank entries in FieldUnits, excluding assault=true guns
+-- (those escort a group under AssaultGunCap, not the backline ArtyCap).
 Context.FieldUnits = {
 	[1] = { class = UnitClass.ArtilleryTank, unit = "wespe" },
 	[2] = { class = UnitClass.MG, unit = "mgs2(ger)" },
 	[3] = { class = UnitClass.ArtilleryTank, unit = "hummel" },
+	[4] = { class = UnitClass.ArtilleryTank, unit = "stuh42", assault = true },
 }
-eq(LiveArtyCount(), 2, "LiveArtyCount")
+eq(LiveArtyCount(), 2, "LiveArtyCount excludes assault=true guns")
+eq(LiveAssaultGunCount(), 1, "LiveAssaultGunCount counts only assault=true ArtilleryTank entries")
+Context.FieldUnits = {}
 
 -- GetArtyUnit returns an ArtilleryTank row from the current army roster (harness army = "ger").
 -- All of ger's arty subtypes unlock at 900/1200s, so past-unlock elapsed time is required.
@@ -61,6 +65,22 @@ Context.FieldUnits = { [1] = { class = UnitClass.ArtilleryTank, unit = "wespe" }
                         [2] = { class = UnitClass.ArtilleryTank, unit = "hummel" } }
 eq(GetArtyUnit().unit, "sdkfz4", "only the un-fielded subtype remains once the other two are live")
 Context.FieldUnits = {}
+
+-- GetArtyUnit and GetAssaultGunUnit pull from disjoint sets: assault=true guns never appear
+-- in the backline pool, and non-assault arty never appears in the escort pool.
+Purchases[1].Units["ger"] = {
+	{ priority = 0.8, class = UnitClass.ArtilleryTank, unit = "wespe",  unlock = 0 },
+	{ priority = 0.6, class = UnitClass.ArtilleryTank, unit = "stuh42", unlock = 0, assault = true },
+}
+Context.GameClock = 0
+local artySeen, assaultSeen = {}, {}
+for i = 1, 20 do artySeen[GetArtyUnit().unit] = true end
+for i = 1, 20 do assaultSeen[GetAssaultGunUnit().unit] = true end
+eq(artySeen["wespe"], true, "backline pool includes the non-assault subtype")
+eq(artySeen["stuh42"], nil, "backline pool never includes an assault=true gun")
+eq(assaultSeen["stuh42"], true, "escort pool includes the assault=true gun")
+eq(assaultSeen["wespe"], nil, "escort pool never includes a non-assault backline subtype")
+
 Purchases[1].Units["ger"] = saved
 print("arty spawn helpers OK")
 
@@ -172,3 +192,15 @@ BotApi.Scene.Flags = { { name = "T", occupant = 2 }, { name = "oNear", occupant 
 routed = "UNSET"; CaptureFlag(7)
 eq(routed, "UNSET", "artillery issues no order when no flag is safe -> parks at base")
 print("CaptureFlag artillery routing OK")
+
+-- CaptureFlag: an assault=true gun that is a GROUP member follows the group's target instead
+-- of the ArtilleryTargetFlag safe-band routing above -- close-support escort, not backline
+-- artillery. Group membership is checked before IsDefender in CaptureFlag, so this holds
+-- regardless of what ArtilleryFlagPriority would have said for the squad's own position.
+Context.FieldUnits = { [8] = { class = UnitClass.ArtilleryTank, unit = "stuh42", assault = true, arty = "field" } }
+Context.SquadGroup = { [8] = 1 }
+Context.Groups = { [1] = { members = { [8] = true }, auxMembers = { [8] = true }, size = 4, target = "mainTarget" } }
+BotApi.Scene.Flags = { { name = "mainTarget", occupant = 2 } }
+routed = nil; CaptureFlag(8)
+eq(routed, "mainTarget", "assault gun in a group follows the group's target, not a rear safe-band flag")
+print("CaptureFlag assault-gun escort routing OK")
