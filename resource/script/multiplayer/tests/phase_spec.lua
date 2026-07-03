@@ -7,7 +7,8 @@ end
 -- TierOf
 eq(TierOf({class = UnitClass.Infantry, inf = "rifle"}), "rifle", "rifle inf is rifle")
 eq(TierOf({class = UnitClass.Infantry, inf = "smg"}),   "smg",   "smg inf is smg")
-eq(TierOf({class = UnitClass.Infantry, mech = true, inf = "smg"}), "light", "mech smg is light")
+eq(TierOf({class = UnitClass.Infantry, mech = true, inf = "smg"}), "smg",
+	"mech infantry is still infantry, not armor -- must not share the light (armor) bucket")
 eq(TierOf({class = UnitClass.Infantry}), "rifle", "plain inf defaults to rifle")
 eq(TierOf({class = UnitClass.Infantry, flame = true}), nil, "flamer is aux")
 eq(TierOf({class = UnitClass.Tank, weight = "light"}),  "light",  "light tank")
@@ -17,7 +18,8 @@ eq(TierOf({class = UnitClass.Tank, weight = "heavy"}),  "heavy",  "heavy-tonnage
 eq(TierOf({class = UnitClass.Tank, weight = "sheavy"}), "heavy",  "super-heavy-tonnage tank")
 eq(TierOf({class = UnitClass.HeavyTank, recharge = 2160}), "heavy", "tiger heavy")
 eq(TierOf({class = UnitClass.Vehicle, recharge = 30}), "light", "halftrack light")
-eq(TierOf({class = UnitClass.Infantry, mech = true}), "light", "mech inf is light")
+eq(TierOf({class = UnitClass.Infantry, mech = true}), "rifle",
+	"mech inf with no inf= field falls through to rifle, same as any other plain infantry")
 eq(TierOf({class = UnitClass.ATInfantry}), nil, "AT is aux")
 eq(TierOf({class = UnitClass.MG}), nil, "MG is aux")
 eq(TierOf({class = UnitClass.Vehicle, support = true}), nil,

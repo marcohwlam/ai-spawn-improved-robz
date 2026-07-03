@@ -564,9 +564,15 @@ function TierOf(t)
 	-- along as aux, same as MG/AT/officer -- they must never crowd out real light tanks in
 	-- the "light" ratio slot.
 	if t.support then return nil end
+	-- mech=true (mounted/panzergrenadier-style Infantry, e.g. pzgren_mech(ger_ss)) is still
+	-- infantry, not armor -- it must NOT share the "light" bucket with actual light tanks/
+	-- vehicles. It used to: once a mech squad filled the field's light-tier count, DecideTier's
+	-- deficit calculation saw "light" as satisfied and stopped picking that tier at all, so real
+	-- light armor (pz2l, sdkfz222, np_sdkfz250_1, ...) went unpicked for the first 10+ minutes of
+	-- a match even though it was unlocked and affordable the whole time. Falls through to the
+	-- same rifle/smg classification as any other non-mech infantry.
 	if t.class == UnitClass.Infantry and not t.flame then
-		if t.mech then return "light"
-		elseif t.inf == "smg" then return "smg"
+		if t.inf == "smg" then return "smg"
 		else return "rifle" end
 	elseif t.class == UnitClass.HeavyTank then
 		return "heavy"
