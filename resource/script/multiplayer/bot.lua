@@ -143,7 +143,18 @@ local AtRifleCap      = 1       -- max live AT rifles kept
 -- target, same shape as the AT-rifle keep-alive above, instead of parking at a rear
 -- safe-band flag via ArtilleryTargetFlag like wespe/hummel/sdkfz4.
 local AssaultGunIntervalSec = 40   -- seconds between assault-gun keep-alive checks
-local AssaultGunCap    = 1       -- max live assault guns kept
+local AssaultGunCap    = 1       -- max live assault guns kept PER DESIGNATED INSTANCE (see below)
+
+-- True if this bot instance is the one designated to run the assault-gun keep-alive trickle.
+-- AssaultGunCap is per-instance (each bot player's Context is independent, and the engine
+-- exposes no cross-player squad visibility -- see the Context.AssaultGunDesignated comment
+-- in OnGameStart), so with teamSize>1 every teammate would otherwise independently field its
+-- own capped assault gun, letting the team field up to teamSize instead of 1. Solo teams
+-- (teamSize<=1) always run it. Multi-player teams designate only the odd-playerId half of
+-- the observed {N, N+1} sequential pairing, halving a 2-player team's total to 1. Pure.
+function AssaultGunDesignatedFor(teamSize, playerId)
+	return (teamSize or 1) <= 1 or (playerId % 2 == 1)
+end
 
 -- Support-vehicle keep-alive: units tagged support=true (e.g. the 75mm gun halftracks) get
 -- their own guaranteed slot, mirroring the AT-rifle keep-alive shape, instead of competing
@@ -1555,6 +1566,12 @@ function OnGameStart()
 	Context.LastAtRifleTime = 0
 	Context.LastAssaultGunTime = 0
 	Context.LastSupportVehicleTime = 0
+	-- AssaultGunCap is enforced per bot INSTANCE (Context is per-player; Instance/Scene are
+	-- opaque with no cross-player squad visibility -- START_PROBE above confirms players/
+	-- playerCount/teamPlayers/allies all read nil). With teamSize>1 (multiple AI players
+	-- sharing a team/faction), each teammate's instance independently caps at 1, so the team
+	-- fields up to teamSize assault guns instead of 1. See AssaultGunDesignatedFor.
+	Context.AssaultGunDesignated = AssaultGunDesignatedFor(BotApi.Instance.teamSize, BotApi.Instance.playerId)
 	Context.RatioCount = 0
 	Context.AuxOwed = 0
 	Context.Cappers = {}
@@ -1901,7 +1918,8 @@ function OnGameQuant()
 	-- attach specifically to the MAIN group (id 1) and follow its target, unlike the AT rifle
 	-- above which is fine escorting whichever group needs it -- these are meant as the main
 	-- push's direct-fire support, not a sub-prong add-on.
-	if Elapsed() - Context.LastAssaultGunTime >= AssaultGunIntervalSec and SpawnSlotFree() then
+	if Context.AssaultGunDesignated
+	and Elapsed() - Context.LastAssaultGunTime >= AssaultGunIntervalSec and SpawnSlotFree() then
 		Context.LastAssaultGunTime = Elapsed()
 		if LiveAssaultGunCount() < AssaultGunCap
 		and OwnedSquadCount() < CurrentSquadCap()
