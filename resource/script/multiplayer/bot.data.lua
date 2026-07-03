@@ -128,9 +128,18 @@ Purchases = {
 				{priority=2.0, class=UnitClass.Airborne,   unit="elites_44_drop(ger)",},
 				{priority=1.5, class=UnitClass.Vehicle,    unit="np_sdkfz250_1", unlock=180,},
 				{priority=1.5, class=UnitClass.Vehicle,    unit="np_sdkfz251_1_late_single", unlock=180,},
-				{priority=1.5, class=UnitClass.Vehicle,    unit="np_sdkfz250_10", unlock=180, support=true,},
-				{priority=1.5, class=UnitClass.Vehicle,    unit="np_sdkfz251_9", unlock=180, support=true,},
-				{priority=1.5, class=UnitClass.Vehicle,    unit="np_sdkfz234_3", unlock=180, support=true,},
+				-- support=true routes these three to the aux pool (bot.lua TierOf), where they
+				-- compete purely by priority against ~7 duplicate MG entries + 3 AT entries above
+				-- (each priority=1.0) plus sniper/flame, for only AuxPerCycle=2 picks per full
+				-- ratio cycle. At the old priority=1.5 they were a small, easily-starved minority
+				-- of that pool -- bumped to 2.5 (elite-infantry tier) so a support vehicle wins a
+				-- meaningfully larger share of aux picks instead of reading as "never spawns".
+				-- unlock times corrected to match the live mod's real .set data (were a flat
+				-- 180s guess before; real unlock is per-unit and np_sdkfz234_3 in particular
+				-- unlocks far later at 530s, not 180s).
+				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz250_10", unlock=240, support=true,},
+				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz251_9", unlock=370, support=true,},
+				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz234_3", unlock=530, support=true,},
 				{priority=1.5, class=UnitClass.Tank,       unit="pz2l",               min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz222",            min_income=1.0, unlock=380,},
 				{priority=1.0, class=UnitClass.Tank,       unit="np_sdkfz234_1",       min_income=1.0, unlock=420,},
@@ -391,8 +400,10 @@ Purchases = {
 				{priority=1.5, class=UnitClass.Infantry,   unit="elite_guards_shock_assault(rus_guard)", inf="smg", elite=true,},
 				{priority=1.0, class=UnitClass.ATInfantry, unit="bazookers_piat(rus_guard)",},
 				{priority=1.0, class=UnitClass.MG      ,   unit="mgs2(rus_guard)",},
-				{priority=1.5, class=UnitClass.Vehicle,    unit="m3a1scout_guard", unlock=180, support=true,},
-				{priority=1.5, class=UnitClass.Vehicle,    unit="m3_guard", unlock=180, support=true,},
+				-- unlock corrected 180->240 to match the live mod's real .set data (both actually
+				-- unlock at 240s, not the flat 180s guess used when these were first added).
+				{priority=2.5, class=UnitClass.Vehicle,    unit="m3a1scout_guard", unlock=240, support=true,},
+				{priority=2.5, class=UnitClass.Vehicle,    unit="m3_guard", unlock=240, support=true,},
 				{priority=1.5, class=UnitClass.Tank,       unit="t60_guard",     min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="t70_guard",     min_income=1.0, unlock=440,},
 				{priority=1.0, class=UnitClass.ATTank,     unit="su76_guard",    min_income=1.5,},
