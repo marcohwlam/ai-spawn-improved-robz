@@ -204,3 +204,13 @@ BotApi.Scene.Flags = { { name = "mainTarget", occupant = 2 } }
 routed = nil; CaptureFlag(8)
 eq(routed, "mainTarget", "assault gun in a group follows the group's target, not a rear safe-band flag")
 print("CaptureFlag assault-gun escort routing OK")
+
+-- AssaultGunDesignatedFor: AssaultGunCap is enforced per bot instance, and with multiple AI
+-- players sharing a team (teamSize>1) every teammate would otherwise independently field its
+-- own capped assault gun. Only the odd-playerId half of a {N, N+1} team pair is designated.
+eq(AssaultGunDesignatedFor(1, 1), true, "solo team (teamSize=1): always designated regardless of playerId")
+eq(AssaultGunDesignatedFor(1, 4), true, "solo team: designated even with an even playerId")
+eq(AssaultGunDesignatedFor(2, 3), true, "2-player team, odd playerId: designated")
+eq(AssaultGunDesignatedFor(2, 4), false, "2-player team, even playerId: not designated (teammate covers it)")
+eq(AssaultGunDesignatedFor(nil, 1), true, "nil teamSize treated as solo (<=1): designated")
+print("AssaultGunDesignatedFor OK")
