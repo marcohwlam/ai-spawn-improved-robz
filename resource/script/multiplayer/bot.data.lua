@@ -284,7 +284,12 @@ Purchases = {
 				{priority=2.0, class=UnitClass.ATTank,        unit="su85",                 min_income=1.5,},
 				{priority=2.0, class=UnitClass.ATTank,        unit="su76",                 min_income=1.5,},
 				{priority=1.0, class=UnitClass.ATTank,        unit="isu122",               min_income=2.5, min_team=1,},
-				{priority=0.8, class=UnitClass.ArtilleryTank, unit="su122", min_income=2.0, min_team=1, unlock=1120, arty="field",},
+				-- su122: closed-casemate 122mm howitzer on a T-34 hull, the direct Soviet
+				-- counterpart to StuH42 -- direct-fire infantry support, escorts the main
+				-- group rather than sitting backline (see the ger stuh42/brummbar comment).
+				-- su152/isu152 are left as backline artillery: closer to a tank-hunting
+				-- assault gun with longer engagement range than su122/StuH42.
+				{priority=0.8, class=UnitClass.ArtilleryTank, unit="su122", min_income=2.0, min_team=1, unlock=1120, arty="field", assault=true,},
 				{priority=0.5, class=UnitClass.ArtilleryTank, unit="su152", min_income=2.0, min_team=1, unlock=1120, arty="heavy",},
 				{priority=0.5, class=UnitClass.ArtilleryTank, unit="isu152", min_income=2.0, min_team=1, unlock=1120, arty="heavy",},
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="bm13", min_income=2.0, min_team=1, unlock=1200, arty="rocket",},
@@ -406,7 +411,8 @@ Purchases = {
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="bm8-48_guard", min_income=2.0, min_team=1, unlock=900, arty="rocket",},
 				{priority=0.5, class=UnitClass.ArtilleryTank, unit="isu152_guard", min_income=2.0, min_team=1, unlock=1120, arty="heavy",},
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="np_bm31_guard", min_income=2.5, min_team=1, unlock=1200, arty="rocket",},
-				{priority=0.8, class=UnitClass.ArtilleryTank, unit="su122_guard", min_income=2.0, min_team=1, unlock=1120, arty="field",},
+				-- su122_guard: same rationale as the rus entry above -- escorts the main group.
+				{priority=0.8, class=UnitClass.ArtilleryTank, unit="su122_guard", min_income=2.0, min_team=1, unlock=1120, arty="field", assault=true,},
 			},
 		},
 	},
