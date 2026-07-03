@@ -49,6 +49,7 @@ Context = {
 	FailCooldown = {}, -- unit.unit -> Elapsed() seconds of last FAILED spawn (skip a while)
 	PrevOwned = {},    -- flag name -> true if we owned it last tick
 	LostStamp = {},    -- flag name -> Elapsed() seconds when we lost it (recapture priority)
+	CapturedStamp = {}, -- flag name -> Elapsed() seconds when we captured it (settle grace)
 	FlagLabel = {},    -- flag name -> {sector, rank, axis, x, y}; set by LabelFlags at start
 	FlagBases = nil,   -- the matched map's base coords, or nil on an unrecognized map
 	FlagOwner = {},    -- flag name -> {band, shared, mine, lat}; set by PartitionFlags at start
@@ -81,6 +82,14 @@ local CapperRotationPeriod = 15 * 1000 -- ms between capper target re-picks
 local CapperNearRange = 2500
 local GroupHomeGraceSec = 240 -- first N seconds: groups ignore OWN-sector (home) flags and push forward
 local GroupTargetStuckSec = 480 -- if a group can't take its target within this long, force a re-pick
+-- A flag's occupant flipping to our team is the only capture signal the engine exposes (no
+-- progress %, no "still contesting" flag) -- it is NOT proof the capture is secure. Without
+-- this grace period, a group/capper that just took a flag saw it as no longer a valid target
+-- (FlagTier/FlagAttackable/FlagNeutralByName all treat an owned flag as done) and immediately
+-- moved on the same tick, sometimes before the position was defended -- letting the enemy
+-- recontest an undefended, barely-won flag. During this window a just-captured flag still
+-- counts as the group/capper's objective (hold it), instead of the next target.
+local CaptureSettleSec = 30
 
 -- When a Spawn fails (usually the picked unit is unaffordable right now), bench
 -- that unit for FailCooldownSec seconds so the picker falls through to a cheaper tier
@@ -1554,6 +1563,7 @@ function OnGameStart()
 	Context.FailCooldown = {}
 	Context.PrevOwned = {}
 	Context.LostStamp = {}
+	Context.CapturedStamp = {}
 	Context.Groups = {}
 	Context.SquadGroup = {}
 	Context.FillGroup = nil
@@ -1646,7 +1656,13 @@ function AttemptSpawn(tag)
 	if ok then return "ok" else return "fail" end
 end
 
--- Stamp flags we just lost (ours last tick, now no longer ours) with the loss time.
+-- Stamp flags we just lost (ours last tick, now no longer ours) with the loss time, and
+-- flags we just captured (not ours last tick, ours now) with the capture time. The engine's
+-- flag object exposes only `name` and `occupant` (confirmed via MapProbe's field dump) --
+-- no capture-progress percentage, no "still contesting" flag -- so `occupant` flipping to our
+-- team is the only signal we get, and it is NOT proof the capture is secure: a fresh capture
+-- can still be flipped back quickly if the position is undefended. CapturedStamp lets
+-- FlagJustCaptured approximate "how long have we held this" from that one bit of information.
 -- Triggers on owned->neutral (enemy mid-capture), not only owned->enemy, so FlagTier
 -- can escalate an own-sector flag to tier 1 before the enemy finishes capturing it.
 function TrackLostFlags()
@@ -1654,6 +1670,8 @@ function TrackLostFlags()
 		local ownedNow = (flag.occupant == BotApi.Instance.team)
 		if Context.PrevOwned[flag.name] and not ownedNow then
 			Context.LostStamp[flag.name] = Elapsed()
+		elseif ownedNow and not Context.PrevOwned[flag.name] then
+			Context.CapturedStamp[flag.name] = Elapsed()
 		end
 		Context.PrevOwned[flag.name] = ownedNow
 	end
@@ -1982,6 +2000,19 @@ function FlagAttackable(name)
 	return false
 end
 
+-- True if we currently own this flag AND captured it within the last CaptureSettleSec
+-- seconds (see the constant's comment). Requires the CURRENT occupant to still be us, not
+-- just a recent-enough CapturedStamp -- a flag captured, then lost, then not yet recaptured
+-- must not read as "settling" off a stale timestamp.
+function FlagJustCaptured(name)
+	local stamp = Context.CapturedStamp[name]
+	if not stamp or Elapsed() - stamp >= CaptureSettleSec then return false end
+	for i, flag in pairs(BotApi.Scene.Flags) do
+		if flag.name == name then return flag.occupant == BotApi.Instance.team end
+	end
+	return false
+end
+
 -- Squared distance from a flag's coords to the nearest flag our team currently owns.
 -- nil when the flag has no coords or we own no coord-bearing flag (triggers legacy ordering).
 function NearestOwnedDist(label)
@@ -2017,6 +2048,12 @@ function FlagTier(name)
 		if f.name == name then flag = f; break end
 	end
 	if not flag then return nil end
+	-- Hold newly-won ground for CaptureSettleSec before it can be dropped as a target: an
+	-- owned flag would otherwise fall straight through to nil below (neither held nor
+	-- lostNeutral) the instant occupant flips, which is not proof the capture is secure (see
+	-- CaptureSettleSec's comment). Same tier as an active frontier fight so this never loses
+	-- out to a genuinely better candidate, but also never permanently outranks one.
+	if FlagJustCaptured(name) then return 2 end
 	local held = flag.occupant == enemy
 	local neutral = flag.occupant ~= team and flag.occupant ~= enemy
 	local lostNeutral = neutral and Context.LostStamp[name] ~= nil
@@ -2092,9 +2129,13 @@ end
 
 function CaptureFlag(squad)
 	-- Group members: attack the group's shared target (membership overrides class role).
+	-- FlagJustCaptured also qualifies: a freshly-taken flag still orders the group there
+	-- (the command holds/garrisons an owned flag, same mechanism defenders use) instead of
+	-- going order-less for the rest of the settle window while UpdateGroupTargets keeps it
+	-- as the group's target but CaptureFlag itself refuses to route to an owned flag.
 	local gi = Context.SquadGroup[squad]
 	if gi and Context.Groups[gi] and Context.Groups[gi].target
-	   and FlagAttackable(Context.Groups[gi].target) then
+	   and (FlagAttackable(Context.Groups[gi].target) or FlagJustCaptured(Context.Groups[gi].target)) then
 		BotApi.Commands:CaptureFlag(squad, Context.Groups[gi].target)
 		return
 	end
@@ -2108,10 +2149,13 @@ function CaptureFlag(squad)
 	if Context.Cappers[squad] then
 		-- Stay committed to the current flag while it is still neutral (capture unfinished
 		-- and not lost to the enemy), so a re-pick never pulls the capper off a flag it is
-		-- mid-way through capping. Only choose a new flag once the current one is captured,
-		-- lost, or unset.
+		-- mid-way through capping. FlagJustCaptured extends this past the occupant flip: the
+		-- capper is the only thing garrisoning a flag it just took, so pulling it off
+		-- immediately (occupant == team no longer reads as neutral) hands the enemy an
+		-- undefended, barely-won flag back for free. Only actually moves on once the flag has
+		-- been ours long enough to count as settled, lost again, or unset.
 		local cur = Context.CapperTarget[squad]
-		if cur and FlagNeutralByName(cur) then
+		if cur and (FlagNeutralByName(cur) or FlagJustCaptured(cur)) then
 			BotApi.Commands:CaptureFlag(squad, cur)
 			return
 		end
