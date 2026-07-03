@@ -97,7 +97,14 @@ local BackfillQuietSec    = 30   -- seconds after a wave start before idle backf
 local DefenderIntervalSec = 20   -- seconds between defender checks
 local DefenderCap      = 3       -- max live MG teams the bot keeps fielded
 local ArtyIntervalSec  = 45      -- seconds between artillery trickle checks (rarer than MG)
-local ArtyCap          = 1       -- max live artillery pieces the bot keeps fielded
+-- max live artillery pieces the bot keeps fielded, shared across every arty subtype (field/
+-- heavy/rocket) a faction has. At 1, the first subtype to unlock and win GetArtyUnit's
+-- priority-weighted pick (usually the cheapest/earliest, e.g. wespe_ss at unlock=900) fills
+-- the only slot and, as long as it survives, permanently locks out every other subtype for
+-- the rest of the match -- e.g. ger_ss's sdkfz4_ss rocket halftrack (unlock=1200, lowest
+-- priority of the three) would essentially never get a turn. 2 gives a second subtype room
+-- to appear once its own unlock passes, without turning artillery into a real force pillar.
+local ArtyCap          = 2       -- max live artillery pieces the bot keeps fielded
 local DeepStrikePct        = 0.65   -- trigger deep-strike when enemy holds > this share of all flags
 local DeepStrikeIntervalSec = 180   -- seconds between airborne drops (frontline-equivalent of c(900) x 0.2)
 local DeepStrikeCap        = 2      -- max live airborne squads kept fielded
@@ -453,13 +460,26 @@ function LiveMGCount()
 	return n
 end
 
--- An artillery unit from the current faction roster, drawn by priority, or nil.
+-- An artillery unit from the current faction roster, drawn by priority, or nil. Filters out
+-- subtypes not yet unlocked (GetUnitToSpawn's pool does this for every other unit; the arty
+-- trickle calls this directly instead, so it must apply the same check itself) and any
+-- subtype already fielded live, so with ArtyCap > 1 the extra slot(s) go toward variety
+-- instead of a second copy of whichever subtype won the last pick.
 function GetArtyUnit()
 	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]
 	if not roster then return nil end
+	local elapsed = Elapsed()
+	local live = {}
+	for squadId, entry in pairs(Context.FieldUnits) do
+		if entry.class == UnitClass.ArtilleryTank then live[entry.unit] = true end
+	end
 	local arty = {}
 	for i, t in pairs(roster) do
-		if t.class == UnitClass.ArtilleryTank then table.insert(arty, t) end
+		if t.class == UnitClass.ArtilleryTank
+		and (t.unlock == nil or elapsed >= t.unlock)
+		and not live[t.unit] then
+			table.insert(arty, t)
+		end
 	end
 	if #arty == 0 then return nil end
 	return GetRandomItem(arty, function(t) return t.priority end)

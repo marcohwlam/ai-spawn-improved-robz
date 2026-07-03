@@ -12,7 +12,10 @@ Context.FieldUnits = {
 }
 eq(LiveArtyCount(), 2, "LiveArtyCount")
 
--- GetArtyUnit returns an ArtilleryTank row from the current army roster (harness army = "ger")
+-- GetArtyUnit returns an ArtilleryTank row from the current army roster (harness army = "ger").
+-- All of ger's arty subtypes unlock at 900/1200s, so past-unlock elapsed time is required.
+Context.FieldUnits = {}
+Context.GameClock = 1200
 local u = GetArtyUnit()
 assert(u ~= nil, "GetArtyUnit returned nil")
 eq(u.class, UnitClass.ArtilleryTank, "GetArtyUnit class")
@@ -22,6 +25,32 @@ local saved = Purchases[1].Units["ger"]
 Purchases[1].Units["ger"] = { { priority = 1.0, class = UnitClass.Infantry, unit = "x" } }
 eq(GetArtyUnit(), nil, "GetArtyUnit nil when no arty")
 Purchases[1].Units["ger"] = saved
+
+-- GetArtyUnit is unlock-aware: before any subtype's unlock time, no candidate is eligible
+-- (the ARTY trickle used to call this blind, wasting attempts on units the engine would
+-- reject and, more importantly, letting an early-unlocking subtype win the priority pick
+-- purely because a later-unlocking one wasn't excluded from consideration yet).
+Context.GameClock = 0
+eq(GetArtyUnit(), nil, "GetArtyUnit nil before any subtype unlocks")
+
+-- Only wespe (unlock=900) is eligible at t=900; hummel/sdkfz4 (unlock=1200) are not yet.
+Context.GameClock = 900
+eq(GetArtyUnit().unit, "wespe", "GetArtyUnit only offers the unlocked subtype")
+
+-- GetArtyUnit excludes a subtype already fielded live, so the ArtyCap>1 slack goes toward a
+-- DIFFERENT subtype instead of a duplicate of whatever already won the last pick -- this is
+-- what lets a low-priority, late-unlocking subtype (e.g. sdkfz4, the rocket halftrack) ever
+-- get picked once wespe has already claimed a slot and survives for the rest of the match.
+Context.GameClock = 1200
+Context.FieldUnits = { [1] = { class = UnitClass.ArtilleryTank, unit = "wespe" } }
+local picks = {}
+for i = 1, 1, 1 do picks[GetArtyUnit().unit] = true end
+eq(picks["wespe"], nil, "already-fielded subtype excluded from GetArtyUnit's pool")
+
+Context.FieldUnits = { [1] = { class = UnitClass.ArtilleryTank, unit = "wespe" },
+                        [2] = { class = UnitClass.ArtilleryTank, unit = "hummel" } }
+eq(GetArtyUnit().unit, "sdkfz4", "only the un-fielded subtype remains once the other two are live")
+Context.FieldUnits = {}
 print("arty spawn helpers OK")
 
 -- Trickle gate: a small re-implementation mirror would duplicate logic, so assert the
