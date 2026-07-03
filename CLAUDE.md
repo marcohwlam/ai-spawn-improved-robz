@@ -62,4 +62,4 @@ The flag-routing filter chain (`PickGroupTarget`/`FlagTier`/`IsFrontier`) must n
 
 ### Design docs
 
-`docs/superpowers/specs/` holds approved design specs (one per feature), `docs/superpowers/plans/` holds implementation plans, `docs/superpowers/roadmap.md` tracks known gaps and future work. `ARCHITECTURE.md`'s "Known gaps" section lists the currently-open ones (lateral partition degradation, in-progress work).
+`docs/superpowers/archive/specs/` holds approved design specs for shipped features (one per feature), `docs/superpowers/archive/plans/` holds their implementation plans, `docs/superpowers/roadmap.md` tracks known gaps and future work. `ARCHITECTURE.md`'s "Known gaps" section lists the currently-open ones (lateral partition degradation, in-progress work). New, not-yet-shipped design specs go in `docs/superpowers/specs/` (created fresh per feature) until the feature ships, then move to the archive.

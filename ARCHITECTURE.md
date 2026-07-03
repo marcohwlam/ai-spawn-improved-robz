@@ -1,7 +1,7 @@
 # Architecture
 
 This document maps how the mod's runtime pieces fit together. For feature-level
-rationale see `docs/superpowers/specs/` and `docs/superpowers/roadmap.md`; this file
+rationale see `docs/superpowers/archive/specs/` and `docs/superpowers/roadmap.md`; this file
 is the structural map, not the history.
 
 ## Scope
@@ -165,6 +165,6 @@ logic, and an end-to-end integration spec through `GetUnitToSpawn`. Run via
   partition currently degrades to "own everything" (safe, non-crashing, just
   not deconflicted) whenever contiguity doesn't hold. A scratch-file
   roster-exchange channel is the proposed fix, not yet built.
-- **Unit roster checker** (`docs/superpowers/plans/2026-07-01-unit-roster-check.md`):
+- **Unit roster checker** (`docs/superpowers/archive/plans/2026-07-01-unit-roster-check.md`):
   a dev-time CLI to validate faction rosters against `bot.data.lua`; in
   progress per `.superpowers/sdd/task-4-report.md`.
