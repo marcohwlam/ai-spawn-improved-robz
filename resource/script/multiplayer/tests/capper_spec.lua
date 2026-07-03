@@ -92,11 +92,30 @@ BotApi.Scene.Flags = { flag("cur", 0), flag("other", 0) }
 routed = nil; CaptureFlag(1)
 eq(routed, "cur", "capper sticks to its current flag while still neutral")
 
--- Once "cur" is captured (ours), the capper re-picks the remaining neutral flag.
+-- With no CapturedStamp on "cur" (unrealistic in a real match, where TrackLostFlags runs every
+-- quant, but exercises the pure FlagJustCaptured==false path), the capper moves on immediately.
 BotApi.Scene.Flags = { flag("cur", "a"), flag("other", 0) }
 routed = nil; CaptureFlag(1)
-eq(routed, "other", "capper moves on only after the current flag is capped")
+eq(routed, "other", "capper moves on immediately when the capture has no CapturedStamp")
 eq(Context.CapperTarget[1], "other", "capper target updates on re-pick")
+
+-- Realistic runtime path: TrackLostFlags stamps "cur" the tick it flips, and the capper --
+-- the only thing garrisoning what it just took -- keeps holding it through the settle window
+-- instead of immediately wandering off and handing the enemy an undefended, barely-won flag.
+Context.CapperTarget = { [1] = "cur" }
+Context.PrevOwned = { cur = false, other = false }
+Context.CapturedStamp = {}
+Context.GameClock = 500
+BotApi.Scene.Flags = { flag("cur", 0), flag("other", 0) }
+TrackLostFlags() -- primes PrevOwned; cur/other both still neutral, no stamp yet
+BotApi.Scene.Flags = { flag("cur", "a"), flag("other", 0) }
+TrackLostFlags() -- cur flips neutral->owned: stamps CapturedStamp["cur"] = 500
+routed = nil; CaptureFlag(1)
+eq(routed, "cur", "capper sticks to a just-captured flag through the settle window")
+
+Context.GameClock = 500 + 30
+routed = nil; CaptureFlag(1)
+eq(routed, "other", "capper moves on once the settle window elapses")
 print("capper stick OK")
 
 print("capper OK")

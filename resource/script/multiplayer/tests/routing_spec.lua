@@ -299,4 +299,110 @@ LabelFlags(); PartitionFlags()
 eq(FlagTier("f6"), 1, "own->neutral flag escalates to tier 1 before enemy capture")
 eq(PickGroupTarget(nil), "f6", "group retakes the own flag being captured")
 
+-- === TrackLostFlags / FlagJustCaptured: the symmetric case -- occupant flipping to us is
+-- not proof the capture is secure (the engine flag object exposes only name+occupant, no
+-- progress %), so a settle grace keeps a just-captured flag as a valid target instead of it
+-- falling straight to nil the instant occupant flips. ===
+Context.GameClock = 300
+Context.PrevOwned = {}
+Context.CapturedStamp = {}
+
+-- Tick 1: f8 is neutral -> no stamp, recorded as not-owned.
+BotApi.Scene.Flags = bastogne({})
+TrackLostFlags()
+eq(Context.CapturedStamp["f8"], nil, "TrackLostFlags: still-neutral flag is not stamped")
+
+-- Tick 2: f8 flips to ours -> stamped at the current clock.
+BotApi.Scene.Flags = bastogne({ f8 = "a" })
+TrackLostFlags()
+eq(Context.CapturedStamp["f8"], 300, "TrackLostFlags: neutral->owned stamps CapturedStamp now")
+
+-- A flag already owned coming into this tick (no transition) is not (re-)stamped.
+Context.PrevOwned["f6"] = true
+BotApi.Scene.Flags = bastogne({ f6 = "a", f8 = "a" })
+TrackLostFlags()
+eq(Context.CapturedStamp["f6"], nil, "TrackLostFlags: already-owned flag is not stamped")
+
+-- FlagJustCaptured: true only within CaptureSettleSec of the stamp AND still owned by us.
+eq(FlagJustCaptured("f8"), true, "FlagJustCaptured: true right after capture")
+Context.GameClock = 300 + 29
+eq(FlagJustCaptured("f8"), true, "FlagJustCaptured: still true just under the settle window")
+Context.GameClock = 300 + 30
+eq(FlagJustCaptured("f8"), false, "FlagJustCaptured: false once the settle window elapses")
+
+-- Stale stamp: captured, then lost again -- must not read as settling off the old stamp.
+Context.GameClock = 305
+BotApi.Scene.Flags = bastogne({ f6 = "a" })  -- f8 no longer occupied by us
+eq(FlagJustCaptured("f8"), false, "FlagJustCaptured: false if no longer owned, even inside the time window")
+
+-- FlagTier: a just-captured flag scores tier 2 (holds as a valid target) instead of falling
+-- through to nil, so neither PickGroupTarget nor PickSubTarget drop it as a candidate the
+-- instant it flips -- this is what stops a group from leapfrogging straight to a deep tier-3
+-- enemy flag the moment its own capture completes, before any group re-pick even happens.
+Context.CapturedStamp = { f9 = 300 }
+Context.GameClock = 310
+BotApi.Scene.Flags = bastogne({ f9 = "a" })
+eq(FlagTier("f9"), 2, "just-captured flag scores tier 2, not nil, during the settle window")
+
+-- === End-to-end reproduction of the reported bug: a group capping a frontier flag (f7) must
+-- not leapfrog to a deep enemy flag (f10, tier 3, confirmed to STAY tier 3 even once f7 is
+-- owned -- unlike f1, which turns out to be a neighbor of f7 and flips to tier 2 itself once
+-- f7 is ours) the instant f7's occupant flips to us, before the capture is secure.
+-- UpdateGroupTargets is the exact function that made the wrong call in the field log (target
+-- switched f7 (tier 2.5) -> a tier-3 flag, reason=priority, only ~10s after f7 was set as the
+-- target -- not a stuck timeout). ===
+Context.Groups = {}
+Context.SquadGroup = { s2 = 1 }
+Context.FieldUnits = { s2 = { unit = "x" } }
+-- f6 has been ours since before this scenario starts (home base) -- primed directly rather
+-- than via TrackLostFlags(), which would otherwise (incorrectly, as a test artifact of the
+-- fresh PrevOwned={} reset) stamp CapturedStamp["f6"] as if it were JUST captured too.
+Context.PrevOwned = { f6 = true }
+Context.CapturedStamp = {}
+Context.LostStamp = {}
+Context.GameClock = 400
+local realCapture2 = BotApi.Commands.CaptureFlag
+BotApi.Commands.CaptureFlag = function() end
+
+-- Minimal, isolated flag set (not the full bastogne() 11-flag fixture): several of its other
+-- neutral flags turn out to ALSO score tier 2 once f7 is owned (frontier-adjacency chains
+-- through the map's neighbor graph), which would make PickGroupTarget's axis tie-break
+-- nondeterministic noise unrelated to what this test is actually checking. f6 is our home
+-- base, f7 is mid-cap in our lane (frontier), f10 is the deep-enemy tier-3 fallback.
+local function flag(name, occ) return { name = name, occupant = occ } end
+BotApi.Scene.Flags = { flag("f6", "a"), flag("f7", 0), flag("f10", "b") }
+LabelFlags(); PartitionFlags()
+Context.Groups[1] = { members = { s2 = true }, size = 5, target = "f7", pending = 0, targetSince = 400 }
+UpdateGroupTargets()
+eq(Context.Groups[1].target, "f7", "still capping: target unchanged (already covered by same-tier stickiness)")
+
+-- f7's capture completes (occupant flips to us) mid-quant. Without the settle grace this is
+-- exactly the moment FlagAttackable(f7) goes false and the bug fired.
+Context.GameClock = 410
+BotApi.Scene.Flags = { flag("f6", "a"), flag("f7", "a"), flag("f10", "b") }
+LabelFlags(); PartitionFlags()
+TrackLostFlags() -- stamps CapturedStamp["f7"] = 410 (neutral -> owned transition)
+UpdateGroupTargets()
+eq(Context.Groups[1].target, "f7", "just captured: target NOT bumped to the deep enemy flag")
+-- CaptureFlag's own group-target guard is what would actually route a squad here (not
+-- UpdateGroupTargets/ReorderGroup, which only re-orders on an actual target CHANGE): confirm
+-- it accepts f7 via FlagJustCaptured even though FlagAttackable(f7) is now false.
+BotApi.Commands.CaptureFlag = function(_, squad, flag)
+	eq(flag, "f7", "just captured: CaptureFlag still routes the member to hold f7")
+end
+CaptureFlag("s2")
+BotApi.Commands.CaptureFlag = function() end
+
+-- Still within the settle window a few ticks later: target holds.
+Context.GameClock = 430
+UpdateGroupTargets()
+eq(Context.Groups[1].target, "f7", "mid-settle: target still holds f7")
+
+-- Settle window elapses: f7 is a genuinely spent objective now (owned, no longer held/lost),
+-- so the group is free to move on -- to f10, the only remaining attackable flag.
+Context.GameClock = 441 -- 410 + CaptureSettleSec(30) + 1
+UpdateGroupTargets()
+eq(Context.Groups[1].target, "f10", "settle window elapsed: group now free to advance to f10")
+BotApi.Commands.CaptureFlag = realCapture2
+
 print("routing OK")
