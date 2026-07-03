@@ -68,6 +68,104 @@ flow, subsystem breakdown). Summary:
 - **Ratio backfill** — keeps the field's composition near its phase target between
   waves.
 
+## Key feature diagrams
+
+### Win/loss-reactive wave scaling
+`FlagDeficit()` (enemy-held flags minus ours) drives both wave budget and cadence in one
+direction only today — fight harder when behind. There is no symmetric "ease off + dig in"
+half yet when ahead; see `docs/superpowers/specs/` for the pending design.
+
+```
+FlagDeficit() > 0 (losing)          FlagDeficit() == 0          FlagDeficit() < 0 (ahead)
+        |                                   |                            |
+        v                                   v                            v
+  budget x(1.0 + 0.25*deficit)         budget x1.0                 budget x1.0 (unchanged)
+  capped at x2.5                       base wave interval           base wave interval
+        |
+        v
+  interval / (1.0 + 0.25*deficit)
+  floored at MinWaveIntervalSec
+```
+
+### Frontier-first targeting + capture-settle grace
+```
+PickGroupTarget() candidate ranking (best to worst):
+  1. recapture       flag we just lost           (LostStamp within window)
+  2. contested front  neutral/contested, adjacent to a flag we hold (IsFrontier)
+  3. enemy frontier   enemy-held, adjacent to a flag we hold
+  4. deep enemy       enemy-held, not adjacent to anything we hold  (last resort)
+
+  occupant flips to us ──► FlagJustCaptured() holds it at tier "contested front"
+                            for CaptureSettleSec=30s, so the group/capper doesn't
+                            immediately drop it and leapfrog to a deeper target
+                            before the position is actually secure.
+```
+
+### Assault guns vs backline artillery (two disjoint pools, one flag)
+```
+                    ArtilleryTank roster entry
+                              |
+                assault=true? ----------------- no --------------.
+                    |                                            |
+                    v                                            v
+        GetAssaultGunUnit()                              GetArtyUnit()
+        (stuh42, brummbar, su122, ...)                    (wespe, hummel, sdkfz4, ...)
+                    |                                            |
+                    v                                            v
+        escorts Context.Groups[1]                    sits on rearmost owned flag
+        (main group), follows ITS target              in ArtyReach safe-band,
+        -- direct-fire close support                   fires at ArtyNearestTarget
+                    |                                    -- indirect-fire backline
+                    v
+        AssaultGunCap=1 per DESIGNATED
+        bot instance (odd playerId half
+        of a teammate pair, so a 2-bot
+        team fields ~1, not 2)
+```
+
+### Support vehicles: dedicated trickle, not the crowded aux pool
+```
+generic aux pool (collectAux):           dedicated keep-alive trickle:
+  ~7 duplicate MG entries                  GetSupportVehicleUnit()
+  + AT entries + sniper/flame/officer      -> SupportVehicleCap=1 guaranteed slot
+  + AuxPerCycle=2 picks per full cycle      -> unlock-correct per faction
+       |                                         (250/9, 251/9, 234/3, ...)
+       v
+  support=true Vehicle EXCLUDED here  ─────────────┘
+  (would otherwise lose almost every draw)
+```
+
+### Late-game heavy-tank affordability guard
+```
+AttemptSpawn(heavy tier, late phase)
+        |
+   spawn fails? ── no ──► reset HeavyFailStreak, ConsecutiveHeavyFails
+        | yes
+        v
+   record this unit id in HeavyFailStreak{}
+        |
+   3 DISTINCT heavy ids failed?  ── or ──  9 consecutive fails (single-heavy-type roster)?
+        |                                             |
+        └─────────────────── either ──────────────────┘
+                              |
+                              v
+              SpawnPauseUntil = now + 150s
+              -> SpawnSlotFree() returns false for every trickle
+                 (wave/backfill/capper/officer/AT-rifle/assault-gun/
+                  support-vehicle/arty/deep-strike/defender) until it elapses,
+                 letting MP bank up instead of draining on filler tiers.
+```
+
+### Crash-safe unit cap
+```
+per bot instance:  OwnedSquadCount()  <  CurrentSquadCap()
+                    (combat=1, aux=0.5)   (24 early / 26 mid / 28 late)
+                          |
+        2v2 (<=4 bot instances): ~96 weighted / ~130-160 real squads
+        under the ~200-squad level that OOM'd the 32-bit engine.
+        Lower MaxLiveSquads for bigger team games.
+```
+
 ## Layout
 
 ```
@@ -85,7 +183,8 @@ resource/
                        -- artillery weapon presets with PrepareTime=0
 tools/                 -- offline Python generators (flag_sectors, unit meta,
                           artillery roster, aim-time), each with a test_*.py
-docs/                  -- design specs, implementation plans, roadmap
+docs/                  -- roadmap.md + superpowers/specs (pending) and
+                          superpowers/archive (shipped design specs, plans, handoff)
 ```
 
 ## Tests
