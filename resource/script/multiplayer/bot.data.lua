@@ -198,6 +198,15 @@ Purchases = {
 				{priority=2.0, class=UnitClass.Airborne,   unit="elites_44_drop(ger_ss)",},
 				{priority=1.5, class=UnitClass.Vehicle,    unit="np_sdkfz250_1", unlock=180,},
 				{priority=1.5, class=UnitClass.Vehicle,    unit="sdkfz251_1_late_ss", unlock=180,},
+				-- SS gun-car equivalents of the ger support-vehicle trio (np_sdkfz250_10/251_9/
+				-- 234_3): this roster never had any support=true entry at all, so the dedicated
+				-- keep-alive trickle (bot.lua SupportVehicleIntervalSec) had nothing to spawn --
+				-- read as "251/9 never spawns". np_sdkfz250_9 (2cm gun car) is ger_ss's real
+				-- roster analog to ger's np_sdkfz250_10; np_sdkfz251_9/np_sdkfz234_3 share the
+				-- same ids as ger. Unlock times per the live mod's real .set data.
+				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz250_9", unlock=320, support=true,},
+				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz251_9", unlock=370, support=true,},
+				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz234_3", unlock=530, support=true,},
 				{priority=1.5, class=UnitClass.Tank,       unit="pz2l",               min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz222",            min_income=1.0, unlock=380,},
 				{priority=1.0, class=UnitClass.Tank,       unit="pz3_m_ss",            min_income=1.0, unlock=630, weight="medium",},
@@ -368,6 +377,10 @@ Purchases = {
 				{priority=1.0, class=UnitClass.MG      ,   unit="stormtroopers3(ger2)",},
 				{priority=1.5, class=UnitClass.Vehicle,    unit="sdkfz250_1_single", unlock=180,},
 				{priority=1.5, class=UnitClass.Vehicle,    unit="kfz15_gun", unlock=30,},
+				-- Same gap as ger_ss: no support=true entry existed, so the keep-alive trickle
+				-- had nothing to spawn. sdkfz234_3 is ger2's confirmed real roster gun car
+				-- (unlock per the live mod's .set data).
+				{priority=2.5, class=UnitClass.Vehicle,    unit="sdkfz234_3", unlock=530, support=true,},
 				{priority=1.5, class=UnitClass.Tank,       unit="pz2l_ger2",          min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz234_1",         min_income=1.0, unlock=420, weight="light",},
 				{priority=1.0, class=UnitClass.Tank,       unit="pz3_ger2",           min_income=1.0, unlock=630, weight="medium",},
