@@ -185,6 +185,7 @@ Purchases = {
 				{priority=2.0, class=UnitClass.Infantry,   unit="tk_pzgrens_44(ger_ss)", inf="rifle",},
 				{priority=1.5, class=UnitClass.Infantry,   unit="sturmgrens_heavy(ger_ss)", inf="smg",},
 				{priority=1.5, class=UnitClass.Infantry,   unit="pzgren_mech(ger_ss)", mech=true,},
+				{priority=1.5, class=UnitClass.Infantry,   unit="lssah_mech(ger_ss)", mech=true,},
 				{priority=1.5, class=UnitClass.Infantry,   unit="gebirgs_cqc_44(ger_ss)", inf="rifle",},
 				{priority=1.5, class=UnitClass.Infantry,   unit="sturmpios(ger_ss)", inf="smg",},
 				{priority=1.0, class=UnitClass.MG      ,   unit="tk_pzgren_mg(ger_ss)",},
