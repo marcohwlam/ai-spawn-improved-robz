@@ -15,8 +15,12 @@ Context = {
 	SpawnInfo = nil,
 	SquadTimers = {},
 	FieldUnits = {},  -- squadId -> unit entry, tracks live units we spawned
-	SpawnQueue = {},  -- FIFO descriptors for successful Spawn() calls; consumed by OnGameSpawn
-	SpawnLockQuant = -1, -- Context.MatchQuants value of the last claimed spawn slot this tick
+	-- Descriptor for the one Spawn() call we're waiting on OnGameSpawn to confirm, or nil
+	-- if none is outstanding. Single-slot (not a queue): only ever one unconfirmed spawn
+	-- at a time, so the next GameSpawn event is unambiguously this one -- see PendingSpawn
+	-- comment above SpawnSlotFree for why a multi-deep FIFO could not guarantee that.
+	PendingSpawn = nil,
+	PendingSpawnQuant = nil, -- Context.MatchQuants when PendingSpawn was issued, for timeout
 	SpawnFlags = {
 		isAirborne = false,
 		isRare = false,
@@ -63,6 +67,7 @@ Context = {
 local WaveIntervalSec     = 90   -- seconds between wave starts
 local MinWaveIntervalSec  = 15   -- floor: never faster than ~15s even when far behind
 local WaveSpawnSpacing = 7      -- quants between spawns inside a wave (~0.1s)
+local PendingSpawnTimeoutQuants = 20 -- give up on an unconfirmed spawn after this many quants
 local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spent, end wave
 
 -- Late-game heavy-tank affordability guard: repeatedly failing to spawn a heavy tank (too
@@ -659,21 +664,36 @@ function LiveSupportVehicleCount()
 	return n
 end
 
--- The engine accepts at most ~1 Spawn per quant tick (see the WaveSpawnSpacing comment
--- above). The wave/backfill, capper, officer, AT-rifle and deep-strike trickles are each
--- independent `if` blocks in OnGameQuant and can otherwise all fire the same tick; when two
--- Commands:Spawn calls land in one quant, the engine silently defers/reorders one of them,
--- desyncing the FIFO Context.SpawnQueue so a later OnGameSpawn event pops the WRONG
--- descriptor (e.g. a tank spawn consuming a capper's queue entry). That leaves the real
--- spawn with no group/role assignment -- it never gets ordered anywhere and sits at base.
--- These two functions serialize all spawn attempts to at most one claimed slot per quant.
+-- The engine confirms a Spawn() call asynchronously via OnGameSpawn, typically a quant or
+-- more later -- not within the same quant it was issued. Gating on "one claimed slot per
+-- quant" alone (the old approach) only prevented two Commands:Spawn calls landing in the
+-- SAME quant; it did nothing to stop this quant's spawn from being issued before the LAST
+-- quant's spawn had actually been confirmed. With two unconfirmed spawns in flight, if the
+-- engine's OnGameSpawn events for them fire out of order, a simple FIFO pops the WRONG
+-- descriptor (e.g. a tank spawn's descriptor consuming a capper's confirmation). That left
+-- the real spawn with no group/role assignment -- it never gets ordered anywhere and sits at
+-- base -- and, worse, tagged the OTHER squad with the wrong class, corrupting tier-ratio
+-- accounting (GetFieldCounts/DecideTier) for as long as that squad stays alive.
+-- Fix: allow only ONE unconfirmed spawn at a time. SpawnSlotFree blocks every trickle until
+-- OnGameSpawn clears Context.PendingSpawn, so whichever squad confirms next is unambiguous.
+-- PendingSpawnTimeoutQuants is a safety net in case the engine drops a confirmation outright
+-- (rare) -- without it, one lost event would permanently wedge all future spawning.
 function SpawnSlotFree()
 	if Elapsed() < (Context.SpawnPauseUntil or 0) then return false end
-	return Context.SpawnLockQuant ~= Context.MatchQuants
+	if Context.PendingSpawn ~= nil then
+		if Context.MatchQuants - Context.PendingSpawnQuant > PendingSpawnTimeoutQuants then
+			print("[AISPAWN] SPAWN_LOST try=" .. tostring(Context.PendingSpawn.info and Context.PendingSpawn.info.unit))
+			Context.PendingSpawn = nil
+		else
+			return false
+		end
+	end
+	return true
 end
 
-function ClaimSpawnSlot()
-	Context.SpawnLockQuant = Context.MatchQuants
+function ClaimSpawnSlot(descriptor)
+	Context.PendingSpawn = descriptor
+	Context.PendingSpawnQuant = Context.MatchQuants
 end
 
 function LiveCapperCount()
@@ -1173,6 +1193,9 @@ function GetUnitToSpawn(units)
 			elseif t.class == UnitClass.ATTank then mul = mul * 1.5
 			elseif t.class == UnitClass.ATInfantry then mul = mul * 1.5 end
 		end
+		-- From mid phase on, tanks dominate the field and infantry mostly rides escort --
+		-- lean the rifle/smg pick toward mech=true (mounted) squads over foot infantry.
+		if t.mech and phase.name ~= "early" then mul = mul * 1.8 end
 		return t.priority * mul
 	end
 
@@ -1589,7 +1612,8 @@ function OnGameStart()
 	Context.AuxOwed = 0
 	Context.Cappers = {}
 	Context.CapperTarget = {}
-	Context.SpawnQueue = {}
+	Context.PendingSpawn = nil
+	Context.PendingSpawnQuant = nil
 	Context.FailCooldown = {}
 	Context.PrevOwned = {}
 	Context.LostStamp = {}
@@ -1615,7 +1639,6 @@ function AttemptSpawn(tag)
 	if not Context.SpawnInfo then return "empty" end
 	local unit = Context.SpawnInfo
 	local ok = BotApi.Commands:Spawn(unit.unit, MaxSquadSize)
-	if ok then ClaimSpawnSlot() end
 	local field = GetFieldCounts()
 	print("[AISPAWN] " .. tag .. " mq=" .. tostring(Context.MatchQuants)
 		.. " phase=" .. CurrentPhase(Elapsed()).name
@@ -1642,8 +1665,7 @@ function AttemptSpawn(tag)
 			-- count as a pending combat slot either; only ratio units bump g.pending.
 			local isAux = (TierOf(unit) == nil)
 			if not isAux then g.pending = (g.pending or 0) + 1 end
-			Context.SpawnQueue[#Context.SpawnQueue + 1] =
-				{ kind = "group", info = unit, slot = Context.FillGroup, aux = isAux }
+			ClaimSpawnSlot({ kind = "group", info = unit, slot = Context.FillGroup, aux = isAux })
 		end
 		-- size reflects committed fills (live members + pending), since the member for THIS
 		-- spawn lands a quant later via OnGameSpawn.
@@ -1654,14 +1676,10 @@ function AttemptSpawn(tag)
 			.. " size=" .. tostring(GroupMemberCount(g) + (g.pending or 0)) .. "/" .. tostring(g.size) .. PidTag())
 	elseif ok then
 		-- No group to attach to (FillGroup unset or pruned between the check and here):
-		-- still push a descriptor so the FIFO stays in sync with this successful Spawn.
-		-- Skipping this push was the root cause of a class of "wrong unit acts wrong"
-		-- bugs -- e.g. a later officer's descriptor getting consumed by this squad
-		-- (leaving the real officer to inherit a combat descriptor and get sent to
-		-- attack), or a combat unit inheriting an officer descriptor and sitting
-		-- parked at base forever -- since OnGameSpawn blindly pops the next queue
-		-- entry for every engine spawn event regardless of whether one was pushed.
-		Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "trickle", info = unit }
+		-- still claim the slot so OnGameSpawn has a descriptor to confirm against this
+		-- successful Spawn (see ClaimSpawnSlot/SpawnSlotFree for why leaving it unclaimed
+		-- would let a later spawn confirm out of order and inherit this one's identity).
+		ClaimSpawnSlot({ kind = "trickle", info = unit })
 	end
 	if CurrentPhase(Elapsed()).name == "late" and TierOf(unit) == "heavy" then
 		if ok then
@@ -1750,8 +1768,7 @@ function DeepStrikeTrickle()
 	print("[AISPAWN] DEEPSTRIKE try=" .. tostring(u.unit) .. " ok=" .. tostring(ok)
 		.. " pct=" .. string.format("%.2f", EnemyFlagPct()))
 	if ok then
-		ClaimSpawnSlot()
-		Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "airborne", info = u }
+		ClaimSpawnSlot({ kind = "airborne", info = u })
 	else
 		Context.FailCooldown[u.unit] = Elapsed()
 	end
@@ -1839,8 +1856,7 @@ function OnGameQuant()
 				local ok = BotApi.Commands:Spawn(mg.unit, MaxSquadSize)
 				print("[AISPAWN] DEFENDER try=" .. tostring(mg.unit) .. " ok=" .. tostring(ok))
 				if ok then
-					ClaimSpawnSlot()
-					Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "trickle", info = mg }
+					ClaimSpawnSlot({ kind = "trickle", info = mg })
 				else
 					Context.FailCooldown[mg.unit] = Elapsed()
 				end
@@ -1856,8 +1872,7 @@ function OnGameQuant()
 				local ok = BotApi.Commands:Spawn(art.unit, MaxSquadSize)
 				print("[AISPAWN] ARTY try=" .. tostring(art.unit) .. " ok=" .. tostring(ok))
 				if ok then
-					ClaimSpawnSlot()
-					Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "trickle", info = art }
+					ClaimSpawnSlot({ kind = "trickle", info = art })
 				else
 					Context.FailCooldown[art.unit] = Elapsed()
 				end
@@ -1883,8 +1898,7 @@ function OnGameQuant()
 				print("[AISPAWN] CAPPER try=" .. tostring(line.unit)
 					.. " ok=" .. tostring(ok))
 				if ok then
-					ClaimSpawnSlot()
-					Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "capper", info = line }
+					ClaimSpawnSlot({ kind = "capper", info = line })
 				end
 			end
 		end
@@ -1903,8 +1917,7 @@ function OnGameQuant()
 				local ok = BotApi.Commands:Spawn(off.unit, MaxSquadSize)
 				print("[AISPAWN] OFFICER try=" .. tostring(off.unit) .. " ok=" .. tostring(ok))
 				if ok then
-					ClaimSpawnSlot()
-					Context.SpawnQueue[#Context.SpawnQueue + 1] = { kind = "trickle", info = off }
+					ClaimSpawnSlot({ kind = "trickle", info = off })
 				else
 					Context.FailCooldown[off.unit] = Elapsed()
 				end
@@ -1937,11 +1950,9 @@ function OnGameQuant()
 					print("[AISPAWN] ATRIFLE try=" .. tostring(atr.unit)
 						.. " ok=" .. tostring(ok) .. " group=" .. tostring(slot))
 					if ok then
-						ClaimSpawnSlot()
 						-- AT rifle is aux: rides along to escort the platoon but does not fill
 						-- the group cap, so it is not a pending combat slot.
-						Context.SpawnQueue[#Context.SpawnQueue + 1] =
-							{ kind = "group", info = atr, slot = slot, aux = true }
+						ClaimSpawnSlot({ kind = "group", info = atr, slot = slot, aux = true })
 					else
 						Context.FailCooldown[atr.unit] = Elapsed()
 					end
@@ -1979,11 +1990,9 @@ function OnGameQuant()
 					.. " pid=" .. tostring(BotApi.Instance.playerId)
 					.. " liveBefore=" .. table.concat(liveIds, ","))
 				if ok then
-					ClaimSpawnSlot()
 					-- Assault gun is aux: rides along to escort the main group but does not
 					-- fill the group cap, so it is not a pending combat slot.
-					Context.SpawnQueue[#Context.SpawnQueue + 1] =
-						{ kind = "group", info = ag, slot = 1, aux = true }
+					ClaimSpawnSlot({ kind = "group", info = ag, slot = 1, aux = true })
 				else
 					Context.FailCooldown[ag.unit] = Elapsed()
 				end
@@ -2015,11 +2024,9 @@ function OnGameQuant()
 					print("[AISPAWN] SUPPORTVEH try=" .. tostring(sv.unit)
 						.. " ok=" .. tostring(ok) .. " group=" .. tostring(slot))
 					if ok then
-						ClaimSpawnSlot()
 						-- Support vehicle is aux: rides along to escort the platoon but does not
 						-- fill the group cap, so it is not a pending combat slot.
-						Context.SpawnQueue[#Context.SpawnQueue + 1] =
-							{ kind = "group", info = sv, slot = slot, aux = true }
+						ClaimSpawnSlot({ kind = "group", info = sv, slot = slot, aux = true })
 					else
 						Context.FailCooldown[sv.unit] = Elapsed()
 					end
@@ -2270,23 +2277,27 @@ function SetSquadOrder(order, squad, delay)
 end
 
 function OnGameSpawn(args)
-	local d = table.remove(Context.SpawnQueue, 1)  -- FIFO: matches successful spawns in order
-	local info = (d and d.info) or Context.SpawnInfo  -- fallback if queue is empty/desynced
+	-- PendingSpawn is the one descriptor we're waiting to confirm (see SpawnSlotFree/
+	-- ClaimSpawnSlot): at most one Spawn() call is ever unconfirmed at a time, so this event
+	-- IS that spawn. If PendingSpawn is nil, this GameSpawn was not one we issued (pre-placed
+	-- garrison, or any other engine-driven spawn outside AttemptSpawn/the trickles) -- do NOT
+	-- guess an identity for it from stale Context.SpawnInfo (that used to corrupt tier-ratio
+	-- accounting: an untracked squad could get mislabeled as e.g. a light tank, permanently
+	-- inflating GetFieldCounts().light and starving real light-tank picks in DecideTier). Leave
+	-- it unclassified; it still gets a capture order below via the same path pre-placed
+	-- garrison squads already use.
+	local d = Context.PendingSpawn
+	Context.PendingSpawn = nil
+	local info = d and d.info
 	-- Clear the airborne/rare dedup flags now that the unit has physically spawned.
 	Context.SpawnFlags.isAirborne = false
 	Context.SpawnFlags.isRare = false
 	if info then
 		Context.FieldUnits[args.squadId] = info
-		-- TEMP diagnostic, pairs with the ASSAULTGUN try= print above: confirms which
-		-- physical squadId the FIFO queue actually attached this descriptor to, and whether
-		-- the descriptor popped here is the one this event's spawn actually expected (a stale
-		-- Context.SpawnInfo fallback here would mean the queue desynced -- see the
-		-- SpawnSlotFree comment on why that used to happen).
 		if info.class == UnitClass.ArtilleryTank and info.assault then
 			print("[AISPAWN] ASSAULTGUN_SPAWNED squad=" .. tostring(args.squadId)
 				.. " unit=" .. tostring(info.unit)
-				.. " pid=" .. tostring(BotApi.Instance.playerId)
-				.. " viaQueue=" .. tostring(d ~= nil))
+				.. " pid=" .. tostring(BotApi.Instance.playerId))
 		end
 	end
 	if d and d.kind == "capper" then

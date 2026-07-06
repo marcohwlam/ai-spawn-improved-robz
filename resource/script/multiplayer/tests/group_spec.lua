@@ -36,7 +36,7 @@ Context.SquadGroup = {}
 Context.FieldUnits = {}
 Context.AirborneSquads = {}
 Context.Groups = { [1] = { members = {}, auxMembers = {}, size = 5, pending = 1, target = "f1" } }
-Context.SpawnQueue = { { kind = "group", info = { class = UnitClass.Infantry }, slot = 1, aux = false } }
+Context.PendingSpawn = { kind = "group", info = { class = UnitClass.Infantry }, slot = 1, aux = false }
 OnGameSpawn({ squadId = 41 })
 eq(Context.Groups[1].members[41], true, "combat member added")
 eq(Context.Groups[1].auxMembers[41], nil, "combat member not tagged aux")
@@ -46,7 +46,7 @@ print("OnGameSpawn combat OK")
 
 -- OnGameSpawn: an aux group spawn rides along, does NOT touch pending, does NOT fill the cap.
 Context.Groups = { [1] = { members = {}, auxMembers = {}, size = 5, pending = 2, target = "f1" } }
-Context.SpawnQueue = { { kind = "group", info = { class = UnitClass.MG }, slot = 1, aux = true } }
+Context.PendingSpawn = { kind = "group", info = { class = UnitClass.MG }, slot = 1, aux = true }
 OnGameSpawn({ squadId = 42 })
 eq(Context.Groups[1].members[42], true, "aux member added (follows the group target)")
 eq(Context.Groups[1].auxMembers[42], true, "aux member tagged")
@@ -56,14 +56,14 @@ eq(GroupMemberCount(Context.Groups[1]), 0, "aux member does not fill the cap")
 eq(Context.SquadGroup[42], 1, "aux member is a group member (follows target)")
 print("OnGameSpawn aux ride-along OK")
 
--- AttemptSpawn must push a queue entry on every successful Spawn, even when there is no
--- group to attach to (FillGroup unset/pruned). Skipping the push here silently desyncs the
--- FIFO for every OTHER trickle's next OnGameSpawn -- e.g. the next officer spawn inherits
--- THIS combat unit's leftover descriptor and gets sent to attack, while this unit inherits
--- the officer's and sits parked at base forever.
+-- AttemptSpawn must claim a pending-spawn descriptor on every successful Spawn, even when
+-- there is no group to attach to (FillGroup unset/pruned). Skipping this silently desyncs
+-- the next OnGameSpawn for every OTHER trickle -- e.g. the next officer spawn inherits THIS
+-- combat unit's leftover descriptor and gets sent to attack, while this unit inherits the
+-- officer's and sits parked at base forever.
 Context.FillGroup = nil
 Context.Groups = {}
-Context.SpawnQueue = {}
+Context.PendingSpawn = nil
 Context.SpawnInfo = { unit = "riflemans(ger)", class = UnitClass.Infantry, inf = "rifle" }
 Context.RatioCount = 0
 Context.AuxOwed = 0
@@ -72,6 +72,6 @@ local realUpdateUnitToSpawn = UpdateUnitToSpawn
 UpdateUnitToSpawn = function() end -- PIter/Purchases plumbing is irrelevant to this assertion
 AttemptSpawn("SPAWN")
 UpdateUnitToSpawn = realUpdateUnitToSpawn
-eq(#Context.SpawnQueue, 1, "AttemptSpawn pushes a queue entry even with no group to fill")
-eq(Context.SpawnQueue[1].kind, "trickle", "no-group spawn queues as a plain trickle descriptor")
+assert(Context.PendingSpawn ~= nil, "AttemptSpawn claims a pending spawn even with no group to fill")
+eq(Context.PendingSpawn.kind, "trickle", "no-group spawn queues as a plain trickle descriptor")
 print("AttemptSpawn no-group push OK")

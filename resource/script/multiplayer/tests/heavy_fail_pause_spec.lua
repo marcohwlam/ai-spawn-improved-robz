@@ -16,7 +16,7 @@ UpdateUnitToSpawn = function() end -- PIter/Purchases plumbing is irrelevant to 
 local function setup()
 	Context.FillGroup = nil
 	Context.Groups = {}
-	Context.SpawnQueue = {}
+	Context.PendingSpawn = nil
 	Context.RatioCount = 0
 	Context.AuxOwed = 0
 	Context.FailCooldown = {}

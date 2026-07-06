@@ -98,7 +98,7 @@ print("CaptureFlag airborne routing OK")
 
 -- OnGameSpawn tags a kind=="airborne" spawn into AirborneSquads.
 Context.AirborneSquads = {}
-Context.SpawnQueue = { { kind = "airborne", info = { class = UnitClass.Airborne, unit = "elites_44_drop(ger)" } } }
+Context.PendingSpawn = { kind = "airborne", info = { class = UnitClass.Airborne, unit = "elites_44_drop(ger)" } }
 Context.SquadTimers = {}
 OnGameSpawn({ squadId = 31 })
 eq(Context.AirborneSquads[31], true, "OnGameSpawn tags airborne squad")
@@ -110,7 +110,7 @@ BotApi.Commands.Spawn = function(_, unit, size) spawned[#spawned + 1] = { unit =
 Context.Phases = ResolvePhases(BotApi.Instance.army)   -- ger: late after 1500s
 Context.LastDeepStrikeTime = 0
 Context.AirborneSquads = {}
-Context.SpawnQueue = {}
+Context.PendingSpawn = nil
 Context.FailCooldown = {}
 
 -- Not late yet (t=100): no spawn even when enemy owns everything.
@@ -119,10 +119,10 @@ Context.GameClock = 100; spawned = {}; DeepStrikeTrickle()
 eq(#spawned, 0, "no drop before late phase")
 
 -- Late (t=2000) and enemy holds 100% (>65%): one drop, queued as airborne.
-Context.GameClock = 2000; spawned = {}; Context.SpawnQueue = {}; Context.LastDeepStrikeTime = 0
+Context.GameClock = 2000; spawned = {}; Context.PendingSpawn = nil; Context.LastDeepStrikeTime = 0
 DeepStrikeTrickle()
 eq(#spawned, 1, "late + overrun -> one drop")
-eq(Context.SpawnQueue[1].kind, "airborne", "queued as airborne")
+eq(Context.PendingSpawn.kind, "airborne", "queued as airborne")
 
 -- Cooldown blocks an immediate second drop (LastDeepStrikeTime was just set to 2000).
 spawned = {}; DeepStrikeTrickle()
@@ -130,6 +130,7 @@ eq(#spawned, 0, "cooldown blocks second drop")
 
 -- Below threshold (enemy 50%): no drop even when late + cooldown ready.
 Context.LastDeepStrikeTime = 0
+Context.PendingSpawn = nil
 BotApi.Scene.Flags = { { name = "f1", occupant = 2 }, { name = "f2", occupant = 1 } }
 Context.GameClock = 2000; spawned = {}; DeepStrikeTrickle()
 eq(#spawned, 0, "no drop below 65% threshold")
