@@ -75,3 +75,30 @@ UpdateUnitToSpawn = realUpdateUnitToSpawn
 assert(Context.PendingSpawn ~= nil, "AttemptSpawn claims a pending spawn even with no group to fill")
 eq(Context.PendingSpawn.kind, "trickle", "no-group spawn queues as a plain trickle descriptor")
 print("AttemptSpawn no-group push OK")
+
+-- PruneGroups must NOT reap a group whose very first fill attempt failed (e.g. match-start
+-- income too low for any roster unit): it has empty members and pending=0, same shape as a
+-- group that died of attrition, but it was never seeded. Reaping it here forced GroupToFill()
+-- to report nothing needing a fill on the very next WaveCooldown tick, ending the wave
+-- immediately and stranding the bot on capper trickle alone until the next full wave
+-- interval (~90s) built a replacement group from scratch.
+Context.Groups = { [1] = { members = {}, auxMembers = {}, size = 4, pending = 0, seeded = false } }
+PruneGroups()
+assert(Context.Groups[1] ~= nil, "an unseeded, never-filled group survives so the next wave can retry it")
+
+-- A group that WAS seeded and then lost every member (all pending resolved, none alive) is
+-- still reaped -- this is the real "attrition wiped the group out" case.
+Context.Groups = { [1] = { members = {}, auxMembers = {}, size = 4, pending = 0, seeded = true } }
+PruneGroups()
+eq(Context.Groups[1], nil, "a seeded group with no live/pending members is reaped")
+
+-- A group with a live pending fill in flight is never reaped early regardless of seeded state.
+Context.GameClock = 100
+Context.Groups = { [1] = { members = {}, auxMembers = {}, size = 4, pending = 1, seeded = false } }
+PruneGroups()
+assert(Context.Groups[1] ~= nil, "a group with a pending fill is not reaped")
+-- ...but a pending fill that never resolves (lost OnGameSpawn pairing) still ages out after 3s.
+Context.GameClock = 104
+PruneGroups()
+eq(Context.Groups[1], nil, "a pending fill that never resolves is reaped after the stale grace period")
+print("PruneGroups OK")

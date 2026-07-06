@@ -935,13 +935,26 @@ end
 -- Drop a group only when it has no live members AND no pending (queued) members, so a
 -- freshly-filled group is never reaped before its deferred OnGameSpawn lands. Stable slots:
 -- no reindexing, so SquadGroup indices and queued slot refs stay valid.
+--
+-- A group that has never been seeded (its very first fill attempt failed, typically on
+-- affordability -- e.g. match-start income too low for any roster unit) is NOT reaped here:
+-- it used to be, which deleted the group in the SAME quant its first AttemptSpawn failed,
+-- so GroupToFill() saw no group needing a fill on the next WaveCooldown tick (7 quants,
+-- under a second) and the wave ended immediately via the "nothing to fill" WAVE_END path.
+-- The main group then sat empty until the NEXT wave interval (WaveIntervalSec, ~90s) created
+-- a fresh one -- one unlucky first roll cost the bot most of a minute of real spawning,
+-- visible as nothing but the capper trickle firing while combat units never appear. Leaving
+-- an unseeded group in place lets GroupToFill() keep offering it every WaveCooldown tick
+-- instead.
 function PruneGroups()
 	for i = 1, MaxGroups do
 		local g = Context.Groups[i]
 		if g and next(g.members) == nil then  -- raw emptiness: keep alive while ANY member (incl aux) lives
 			if (g.pending or 0) == 0 then
-				if g.seeded then print("[AISPAWN] GROUP_END id=" .. i .. PidTag()) end
-				Context.Groups[i] = nil
+				if g.seeded then
+					print("[AISPAWN] GROUP_END id=" .. i .. PidTag())
+					Context.Groups[i] = nil
+				end
 			else
 				-- pending should clear within ~1 quant once OnGameSpawn lands. If it lingers,
 				-- a Spawn/OnGameSpawn pairing was lost at the engine level; age the slot out so
