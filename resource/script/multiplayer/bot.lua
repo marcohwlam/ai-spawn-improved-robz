@@ -682,7 +682,18 @@ function SpawnSlotFree()
 	if Elapsed() < (Context.SpawnPauseUntil or 0) then return false end
 	if Context.PendingSpawn ~= nil then
 		if Context.MatchQuants - Context.PendingSpawnQuant > PendingSpawnTimeoutQuants then
-			print("[AISPAWN] SPAWN_LOST try=" .. tostring(Context.PendingSpawn.info and Context.PendingSpawn.info.unit))
+			local lost = Context.PendingSpawn
+			print("[AISPAWN] SPAWN_LOST try=" .. tostring(lost.info and lost.info.unit))
+			-- A non-aux group fill's g.pending was incremented when this was claimed (see
+			-- AttemptSpawn), expecting OnGameSpawn to decrement it back on confirm. Since that
+			-- confirm is now never coming, undo it here immediately instead of leaving the
+			-- group to discover the leak on its own via PruneGroups' separate 3s staleSince
+			-- timer -- that redundant second timeout meant a group could sit unable to accept
+			-- new fills for several extra seconds after a lost confirmation was already known.
+			if lost.kind == "group" and not lost.aux and lost.slot then
+				local g = Context.Groups[lost.slot]
+				if g then g.pending = math.max(0, (g.pending or 0) - 1) end
+			end
 			Context.PendingSpawn = nil
 		else
 			return false

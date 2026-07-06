@@ -60,3 +60,23 @@ Context.GameClock = 0
 Context.SpawnPauseUntil = 0
 eq(SpawnSlotFree(), true, "SpawnPauseUntil=0 (default/unset) never blocks")
 print("spawn pause gate OK")
+
+-- A timed-out non-aux group fill must release the group's pending count immediately, not
+-- leave it to PruneGroups' separate 3s staleSince timer to discover the leak later -- that
+-- redundant second timeout meant a group could sit unable to accept new fills for several
+-- extra seconds after the lost confirmation was already known.
+Context.Groups = { [1] = { members = {}, auxMembers = {}, size = 4, pending = 1 } }
+Context.MatchQuants = 20
+ClaimSpawnSlot({ kind = "group", info = { unit = "z" }, slot = 1, aux = false })
+Context.MatchQuants = 20 + PendingSpawnTimeoutQuants + 1
+eq(SpawnSlotFree(), true, "timed-out non-aux group fill frees the slot")
+eq(Context.Groups[1].pending, 0, "timed-out non-aux group fill releases the group's pending count")
+
+-- An aux fill's timeout must NOT touch pending (aux was never counted toward it).
+Context.Groups = { [1] = { members = {}, auxMembers = {}, size = 4, pending = 1 } }
+Context.MatchQuants = 40
+ClaimSpawnSlot({ kind = "group", info = { unit = "z" }, slot = 1, aux = true })
+Context.MatchQuants = 40 + PendingSpawnTimeoutQuants + 1
+eq(SpawnSlotFree(), true, "timed-out aux group fill frees the slot")
+eq(Context.Groups[1].pending, 1, "timed-out aux group fill leaves the group's pending count untouched")
+print("spawn-loss pending cleanup OK")
