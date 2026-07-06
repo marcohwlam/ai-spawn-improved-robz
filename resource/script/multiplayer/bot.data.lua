@@ -197,16 +197,24 @@ Purchases = {
 				{priority=1.0, class=UnitClass.MG      ,   unit="tk_pzgren_mg_39(ger_ss)",},
 				{priority=1.0, class=UnitClass.MG      ,   unit="mg2(ger_ss)",},
 				{priority=2.0, class=UnitClass.Airborne,   unit="elites_44_drop(ger_ss)",},
-				{priority=1.5, class=UnitClass.Vehicle,    unit="np_sdkfz250_1", unlock=180,},
-				{priority=1.5, class=UnitClass.Vehicle,    unit="sdkfz251_1_late_ss", unlock=180,},
-				-- SS gun-car equivalents of the ger support-vehicle trio (np_sdkfz250_10/251_9/
-				-- 234_3): this roster never had any support=true entry at all, so the dedicated
-				-- keep-alive trickle (bot.lua SupportVehicleIntervalSec) had nothing to spawn --
-				-- read as "251/9 never spawns". np_sdkfz250_9 (2cm gun car) is ger_ss's real
-				-- roster analog to ger's np_sdkfz250_10; np_sdkfz251_9/np_sdkfz234_3 share the
-				-- same ids as ger. Unlock times per the live mod's real .set data.
-				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz250_9", unlock=320, support=true,},
-				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz251_9", unlock=370, support=true,},
+				-- These four are "vs"/"vs_ss"-type entries in the mod's own vehicles_44.set: an
+				-- empty vehicle shell plus a separate n(...)-count rider assignment, wrapped
+				-- under an outer purchase button. ger's own vehicles_44.set defines the SAME
+				-- ids (np_sdkfz250_1, np_sdkfz250_9, np_sdkfz251_9) as top-level "vs" buttons
+				-- with no wrapper -- so for ger those bare ids ARE the button. For ger_ss the
+				-- mod instead wraps them: `np_sdkfz250_1_ss` ("vs_ss" v1(np_sdkfz250_1) ...)
+				-- is the real button; the bare id is only the v1() breed reference inside it.
+				-- Spawning the bare id here created a crewless, orderless vehicle prop that
+				-- never fired a squad GameSpawn confirmation -- confirmed via the CONFIRM/
+				-- CLAIM diagnostics: every attempt at np_sdkfz250_1/sdkfz251_1_late_ss/
+				-- np_sdkfz250_9 in a live match ended in SPAWN_LOST, 0 successful CONFIRMs.
+				-- (np_sdkfz234_3/sdkfz222/pz2l are unaffected: their ger_ss buttons are "v_ss"
+				-- type, which bakes crew into the SAME entry via n1/n2, same as tanks -- no
+				-- wrapper, so the bare v1() id is directly spawnable there.)
+				{priority=1.5, class=UnitClass.Vehicle,    unit="np_sdkfz250_1_ss", unlock=180,},
+				{priority=1.5, class=UnitClass.Vehicle,    unit="sdkfz251_1_ss", unlock=180,},
+				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz250_9_ss", unlock=320, support=true,},
+				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz251_9_ss", unlock=370, support=true,},
 				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz234_3", unlock=530, support=true,},
 				{priority=1.5, class=UnitClass.Tank,       unit="pz2l",               min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz222",            min_income=1.0, unlock=380,},
