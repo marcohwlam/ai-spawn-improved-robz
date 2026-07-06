@@ -32,6 +32,11 @@ flow, subsystem breakdown). Summary:
   falls through to a cheaper tier and actually spends the manpower.
 - **Dynamic catch-up** — the further behind on flags, the larger the wave budget and the
   shorter the gap between waves.
+- **Faction composition bias** *(designed, not yet implemented — see
+  `docs/superpowers/specs/2026-07-06-faction-composition-bias-design.md`)* — a per-faction
+  minimum-count floor (e.g. ger medium armor, usa artillery, rus smg, jap mortar) grounded
+  in each faction's real-world doctrine, layered as a short-circuit on top of the existing
+  tier ratio rather than replacing it.
 
 ### Groups and routing
 - **Group system** — up to 2 squads-of-squads share one attack target each

@@ -168,3 +168,9 @@ logic, and an end-to-end integration spec through `GetUnitToSpawn`. Run via
 - **Unit roster checker** (`docs/superpowers/plans/2026-07-01-unit-roster-check.md`):
   a dev-time CLI to validate faction rosters against `bot.data.lua`; in
   progress per `.superpowers/sdd/task-4-report.md`.
+- **Faction composition bias** (`docs/superpowers/specs/2026-07-06-faction-composition-bias-design.md`):
+  design approved, not yet implemented. Adds a per-faction minimum-count floor
+  (`FactionBias`) for 7 categories (the 5 existing tiers plus new `artillery`/`mortar`
+  categories), short-circuiting `DecideTier`/a new shared `TryCappedTrickle` helper
+  before the existing ratio/cap logic runs. Restricted to `tierEligible` tiers so a
+  floor on a not-yet-unlocked tier can't starve the rest of the phase.
