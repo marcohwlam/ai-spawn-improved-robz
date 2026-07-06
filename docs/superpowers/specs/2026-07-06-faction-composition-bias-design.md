@@ -101,15 +101,32 @@ Per-quant ARTY / MORTAR gate
 
 ### 1. `FactionBias` table (bot.data.lua, new)
 
+Default values are chosen to reflect each faction's real-world doctrine rather than picked
+arbitrarily:
+
+| Faction | Doctrine basis | Bias |
+|---|---|---|
+| `ger` | Blitzkrieg — armor as the offensive spearhead | `medium = 1` |
+| `ger_ss` | Panzergrenadier doctrine — mechanized infantry riding with the armor, not extra armor itself | `light = 1` |
+| `ger2` | Ostfront late-war defensive roster (`ost_straf_ppsh`/`ost_straf_mp28`/`home_guards` in RobZ's `ger2` squad set indicate improvised, captured-weapon penal/Volkssturm units) — static infantry attrition, not an armored spearhead | `rifle = 1` |
+| `usa` | "King of Battle" — US doctrine's signature massed/TOT artillery fire support | `artillery = 1` |
+| `rus` | Deep Battle doctrine's PPSh-armed assault infantry ("tommy gunner") waves | `smg = 1` |
+| `rus_guard` | Guards formations received first pick of new heavy equipment (KV/IS series) | `heavy = 1` |
+| `jap` | Infiltration/night-attack doctrine centered on light infantry weapons (knee mortars) over a weak tank arm | `mortar = 1` |
+| `eng` | Montgomery's "colossal cracks" — heavy artillery preparation before every advance | `artillery = 1` |
+
 ```lua
 -- Per-faction minimum-count floor. Categories omitted default to 0 (no floor).
 -- Categories: heavy | medium | light | rifle | smg | artillery | mortar
 FactionBias = {
-    ger    = { medium = 1 },      -- ger armor +1
-    usa    = { artillery = 1 },   -- us arti +1
-    rus    = { smg = 1 },         -- rus inf +1 -> smg tier
-    jap    = { mortar = 1 },      -- jap hand motor +1
-    -- eng, ger_ss, ger2, rus_guard: no entry needed unless a floor is wanted (defaults to no bias)
+    ger       = { medium = 1 },      -- Blitzkrieg armor spearhead
+    ger_ss    = { light = 1 },       -- Panzergrenadier mechanized infantry
+    ger2      = { rifle = 1 },       -- Ostfront defensive infantry attrition
+    usa       = { artillery = 1 },   -- King of Battle
+    rus       = { smg = 1 },         -- PPSh assault infantry waves
+    rus_guard = { heavy = 1 },       -- Guards' first pick of heavy armor
+    jap       = { mortar = 1 },      -- Infiltration doctrine, light infantry weapons
+    eng       = { artillery = 1 },   -- Colossal cracks artillery preparation
 }
 ```
 
