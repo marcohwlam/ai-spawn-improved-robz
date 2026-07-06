@@ -692,6 +692,11 @@ function SpawnSlotFree()
 end
 
 function ClaimSpawnSlot(descriptor)
+	print("[AISPAWN] CLAIM mq=" .. tostring(Context.MatchQuants)
+		.. " kind=" .. tostring(descriptor.kind)
+		.. " unit=" .. tostring(descriptor.info and descriptor.info.unit)
+		.. " slot=" .. tostring(descriptor.slot)
+		.. " aux=" .. tostring(descriptor.aux) .. PidTag())
 	Context.PendingSpawn = descriptor
 	Context.PendingSpawnQuant = Context.MatchQuants
 end
@@ -961,7 +966,9 @@ function PruneGroups()
 				-- it cannot orphan (and desync the queue) for the rest of the match.
 				g.staleSince = g.staleSince or Elapsed()
 				if Elapsed() - g.staleSince > 3 then
-					print("[AISPAWN] GROUP_END id=" .. i .. " reason=stale_pending" .. PidTag())
+					print("[AISPAWN] GROUP_END id=" .. i .. " reason=stale_pending"
+						.. " pending=" .. tostring(g.pending) .. " target=" .. tostring(g.target)
+						.. " staleFor=" .. tostring(Elapsed() - g.staleSince) .. PidTag())
 					Context.Groups[i] = nil
 				end
 			end
@@ -1827,6 +1834,7 @@ function OnGameQuant()
 		if Context.WaveCooldown <= 0 then
 			Context.WaveCooldown = WaveSpawnSpacing
 			Context.FillGroup = GroupToFill()
+			local endReason = nil
 			if Context.FillGroup ~= nil and OwnedSquadCount() < CurrentSquadCap() then
 				if not SpawnSlotFree() then
 					-- Another trickle already claimed this quant's one spawn slot; retry
@@ -1844,16 +1852,22 @@ function OnGameQuant()
 						Context.WaveFails = Context.WaveFails + 1
 						if Context.WaveFails >= MaxWaveFails then
 							Context.WaveRemaining = 0
+							endReason = "max_fails:" .. tostring(r)
 						end
 					end
 				end
 			else
-				-- Both groups are full: nothing to fill, so end the wave now (otherwise the
-				-- cadence would freeze until attrition frees a slot).
+				-- Both groups are full (or no group exists at all): nothing to fill, so end the
+				-- wave now (otherwise the cadence would freeze until attrition frees a slot).
 				Context.WaveRemaining = 0
+				endReason = (Context.FillGroup == nil) and "no_group_to_fill" or "squad_cap"
 			end
 			if Context.WaveRemaining == 0 then
-				print("[AISPAWN] WAVE_END")
+				local ng = 0
+				for i = 1, MaxGroups do if Context.Groups[i] then ng = ng + 1 end end
+				print("[AISPAWN] WAVE_END reason=" .. tostring(endReason)
+					.. " groups=" .. tostring(ng) .. " owned=" .. tostring(OwnedSquadCount())
+					.. " cap=" .. tostring(CurrentSquadCap()) .. PidTag())
 			end
 		end
 	else
@@ -2302,6 +2316,11 @@ function OnGameSpawn(args)
 	local d = Context.PendingSpawn
 	Context.PendingSpawn = nil
 	local info = d and d.info
+	print("[AISPAWN] CONFIRM squad=" .. tostring(args.squadId)
+		.. " matched=" .. tostring(d ~= nil)
+		.. " kind=" .. tostring(d and d.kind)
+		.. " unit=" .. tostring(info and info.unit)
+		.. " slot=" .. tostring(d and d.slot) .. PidTag())
 	-- Clear the airborne/rare dedup flags now that the unit has physically spawned.
 	Context.SpawnFlags.isAirborne = false
 	Context.SpawnFlags.isRare = false
