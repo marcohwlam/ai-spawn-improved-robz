@@ -115,10 +115,19 @@ FactionBias = {
 
 ### 2. `DecideTier` (bot.lua, modify)
 
-Before the existing weight/deficit loop, iterate the 5 tier categories in a fixed order
-(`heavy, medium, light, rifle, smg`) and return the first one whose live count in `field` is
-below `FactionBias[army][cat] or 0`. `tierEligible` still gates which tiers are considered at
-all (e.g. Japan has no `heavy`), so a floor on an ineligible tier is a no-op, not an error.
+Before the existing weight/deficit loop, iterate the tier categories **restricted to
+`tierEligible`** (in a fixed order: `heavy, medium, light, rifle, smg`) and return the first
+one whose live count in `field` is below `FactionBias[army][cat] or 0`.
+
+This restriction is load-bearing, not cosmetic: `tierEligible` already encodes which tiers are
+currently reachable for this phase/faction (e.g. Japan never has `heavy`; a tier whose first
+unit hasn't unlocked yet is excluded during early phase per the per-faction-phase boundaries).
+Scanning all floor entries unconditionally would let the floor force-select a tier that cannot
+actually be spawned yet — `DecideTier` is the sole per-attempt selector for the tier path, so a
+permanently-unmet floor on an unreachable tier would starve every other tier for the rest of
+that phase (same failure shape as the pre-fix `PruneGroups` group-starvation bug from the
+spawn-reliability work). Floors on a tier outside `tierEligible` are simply not evaluated until
+that tier becomes eligible.
 
 ### 3. `TryCappedTrickle(cfg)` (bot.lua, new — extracted from existing ARTY logic)
 
@@ -162,6 +171,7 @@ officer/AA aux behavior is unchanged.
 |---|---|
 | `FactionBias[army]` absent | All 7 categories default to floor 0 — behavior identical to today. |
 | Category floor set on a tier ineligible for the faction (e.g. `jap.heavy`) | No-op; `tierEligible` already excludes it from `DecideTier` consideration. |
+| Category floor set on a tier not yet unlocked this phase (e.g. `ger.medium` during early phase) | No-op until the phase/unlock state makes it `tierEligible` — floor is never evaluated against an unreachable tier, so it cannot starve the other tiers in the meantime. |
 | `FactionBias[army].artillery` or `.mortar` > `ArtyCap`/`MortarCap` | Data contradiction — caught by a load-time self-test assertion, not expected in shipped data. |
 | Floor met exactly (`live == floor`) | Not "unmet" — normal ratio/interval logic resumes. |
 | Multiple tier categories simultaneously below floor | Fixed category order (`heavy, medium, light, rifle, smg`) picks the first; no weighted tie-break — keeps the check deterministic and simple. |
@@ -173,6 +183,9 @@ officer/AA aux behavior is unchanged.
     (mock a field where the ratio math would pick a *different* tier, assert the floor tier
     wins).
   - Floor short-circuit is unaffected by tank-bias (+0.15) and losing-smg-double adjustments.
+  - A floor set on a tier absent from `tierEligible` (not yet unlocked / faction has no such
+    tier) is never selected, and normal weight/deficit selection among the eligible tiers
+    proceeds unimpeded — this is the regression test for the starvation risk called out above.
   - Floor met (`live == floor` and `live > floor`) falls through to normal weight/deficit
     selection.
   - `TryCappedTrickle`: floor-unmet bypasses the interval cooldown but still respects `cap`
