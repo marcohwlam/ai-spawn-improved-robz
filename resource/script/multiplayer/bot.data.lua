@@ -213,6 +213,10 @@ Purchases = {
 				-- wrapper, so the bare v1() id is directly spawnable there.)
 				{priority=1.5, class=UnitClass.Vehicle,    unit="np_sdkfz250_1_ss", unlock=180,},
 				{priority=1.5, class=UnitClass.Vehicle,    unit="sdkfz251_1_ss", unlock=180,},
+				-- np_sdkfz251_10_ss has no ger equivalent (ger's vehicles_44.set doesn't define
+				-- this id at all) -- it's a ger_ss-only support gun-car, not an alternate name
+				-- for one of the others above.
+				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz251_10_ss", unlock=240, support=true,},
 				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz250_9_ss", unlock=320, support=true,},
 				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz251_9_ss", unlock=370, support=true,},
 				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz234_3", unlock=530, support=true,},
