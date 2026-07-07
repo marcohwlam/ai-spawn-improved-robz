@@ -35,6 +35,7 @@ Context = {
 	LastBackfillTime = 0, -- Elapsed() at last idle backfill
 	LastDefenderTime = 0, -- Elapsed() at last MG defender trickle
 	LastArtyTime = 0,     -- Elapsed() at last artillery defender trickle
+	LastMortarTime = 0,   -- Elapsed() at last mortar keep-alive trickle
 	LastDeepStrikeTime = 0, -- Elapsed() at last airborne deep-strike drop
 	AirborneSquads = {},    -- squadId -> true, elite airborne squads sent at enemy bases
 	LastOfficerTime = 0,  -- Elapsed() at last officer keep-alive
@@ -130,6 +131,11 @@ ArtyIntervalSec  = 45      -- seconds between artillery trickle checks (rarer th
 -- priority of the three) would essentially never get a turn. 2 gives a second subtype room
 -- to appear once its own unlock passes, without turning artillery into a real force pillar.
 ArtyCap          = 2       -- max live artillery pieces the bot keeps fielded
+-- Hand-carried mortar keep-alive, mirroring the artillery pattern above: its own cap+interval
+-- pair, independent of the generic aux batch (which would otherwise let it compete with
+-- AT/MG/sniper/officer/AA for a fixed AuxPerCycle=2 slot -- see the collectAux exclusion).
+MortarIntervalSec = 45     -- seconds between mortar trickle checks
+MortarCap         = 2      -- max live hand-carried mortars the bot keeps fielded
 local DeepStrikePct        = 0.65   -- trigger deep-strike when enemy holds > this share of all flags
 local DeepStrikeIntervalSec = 180   -- seconds between airborne drops (frontline-equivalent of c(900) x 0.2)
 local DeepStrikeCap        = 2      -- max live airborne squads kept fielded
@@ -234,6 +240,7 @@ local DefenderClasses = {
 	[UnitClass.Sniper]        = true,
 	[UnitClass.Officer]       = true,
 	[UnitClass.MG]            = true,  -- MG teams dig in on owned flags
+	[UnitClass.Mortar]        = true,  -- mortars sit back on owned flags, same as MG
 }
 
 local PIter = {}
@@ -546,6 +553,38 @@ function LiveArtyCount()
 		if entry.class == UnitClass.ArtilleryTank and not entry.assault then n = n + 1 end
 	end
 	return n
+end
+
+-- Live hand-carried mortars we have fielded (the mortar keep-alive cap).
+function LiveMortarCount()
+	local n = 0
+	for squadId, entry in pairs(Context.FieldUnits) do
+		if entry.class == UnitClass.Mortar then n = n + 1 end
+	end
+	return n
+end
+
+-- A hand-carried mortar from the current faction roster, drawn by priority, or nil. Mirrors
+-- GetArtyUnit: filters out subtypes not yet unlocked and any subtype already fielded live, so
+-- with MortarCap > 1 the extra slot goes toward variety instead of a duplicate.
+function GetMortarUnit()
+	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]
+	if not roster then return nil end
+	local elapsed = Elapsed()
+	local live = {}
+	for squadId, entry in pairs(Context.FieldUnits) do
+		if entry.class == UnitClass.Mortar then live[entry.unit] = true end
+	end
+	local mortars = {}
+	for i, t in pairs(roster) do
+		if t.class == UnitClass.Mortar
+		and (t.unlock == nil or elapsed >= t.unlock)
+		and not live[t.unit] then
+			table.insert(mortars, t)
+		end
+	end
+	if #mortars == 0 then return nil end
+	return GetRandomItem(mortars, function(t) return t.priority end)
 end
 
 -- An airborne (paradrop) unit from the current faction roster, drawn by priority, or nil.
@@ -1216,6 +1255,7 @@ function GetUnitToSpawn(units)
 				and t.class ~= UnitClass.Howitzrer
 				and t.class ~= UnitClass.ArtilleryTank   -- SPGs disabled (poor bot AI use)
 				and t.class ~= UnitClass.Officer         -- officers are parked by their own trickle
+				and t.class ~= UnitClass.Mortar          -- mortars: own dedicated trickle (see TryCappedTrickle)
 				and not (t.class == UnitClass.Vehicle and t.support) then -- support vehicles: own keep-alive trickle
 					table.insert(out, t)
 				end
@@ -1645,6 +1685,7 @@ function OnGameStart()
 	Context.LastBackfillTime = 0
 	Context.LastDefenderTime = 0
 	Context.LastArtyTime = 0
+	Context.LastMortarTime = 0
 	Context.LastDeepStrikeTime = 0
 	Context.AirborneSquads = {}
 	Context.LastOfficerTime = 0
@@ -1956,6 +1997,11 @@ function OnGameQuant()
 			liveCountFn = LiveArtyCount, unitPickerFn = GetArtyUnit, label = "ARTY",
 			phaseGate = function() return CurrentPhase(Elapsed()).name ~= "early" end,
 			floorValue = FactionBias[BotApi.Instance.army] and FactionBias[BotApi.Instance.army].artillery,
+		}) then
+		elseif TryCappedTrickle({
+			lastTimeField = "LastMortarTime", interval = MortarIntervalSec, cap = MortarCap,
+			liveCountFn = LiveMortarCount, unitPickerFn = GetMortarUnit, label = "MORTAR",
+			floorValue = FactionBias[BotApi.Instance.army] and FactionBias[BotApi.Instance.army].mortar,
 		}) then
 		elseif Elapsed() - Context.LastWaveTime >= BackfillQuietSec
 		and Elapsed() - Context.LastBackfillTime >= BackfillIntervalSec and SpawnSlotFree() then

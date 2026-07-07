@@ -104,3 +104,51 @@ UpdateUnitToSpawn = savedUpdateUnitToSpawn
 Purchases[1].Units["ger"] = savedGerRoster
 Context.FieldUnits = {}
 print("TryCappedTrickle OK")
+
+-- LiveMortarCount counts only Mortar-class FieldUnits entries.
+Context.FieldUnits = {
+	[1] = { class = UnitClass.Mortar, unit = "testmortar1" },
+	[2] = { class = UnitClass.MG,     unit = "mgs2(ger)" },
+	[3] = { class = UnitClass.Mortar, unit = "testmortar2" },
+}
+eq(LiveMortarCount(), 2, "LiveMortarCount counts only Mortar-class entries")
+Context.FieldUnits = {}
+
+-- GetMortarUnit mirrors GetArtyUnit: unlock-aware, excludes already-fielded subtypes.
+local savedGerRoster2 = Purchases[1].Units["ger"]
+Purchases[1].Units["ger"] = {
+	{ priority = 0.8, class = UnitClass.Mortar, unit = "mortarA", unlock = 300 },
+	{ priority = 0.5, class = UnitClass.Mortar, unit = "mortarB", unlock = 600 },
+}
+Context.GameClock = 0
+eq(GetMortarUnit(), nil, "GetMortarUnit nil before any subtype unlocks")
+Context.GameClock = 300
+eq(GetMortarUnit().unit, "mortarA", "GetMortarUnit only offers the unlocked subtype")
+Context.GameClock = 600
+Context.FieldUnits = { [1] = { class = UnitClass.Mortar, unit = "mortarA" } }
+eq(GetMortarUnit().unit, "mortarB", "already-fielded subtype excluded once the other unlocks")
+Context.FieldUnits = {}
+Purchases[1].Units["ger"] = savedGerRoster2
+print("LiveMortarCount / GetMortarUnit OK")
+
+-- Mortars are pulled out of the generic aux batch pool into their own dedicated trickle;
+-- GetUnitToSpawn's aux path must never offer one, even when it is otherwise the only other
+-- aux candidate competing for an owed aux slot.
+local auxUnits = {
+	{ class = UnitClass.Sniper, unit = "snipertest", priority = 1.0 },
+	{ class = UnitClass.Mortar, unit = "mortartest", priority = 1.0 },
+}
+Context.GameClock = 0
+Context.Groups = {}
+Context.FillGroup = nil
+Context.FieldUnits = {}
+Context.AuxOwed = 5
+local auxPicks = {}
+for i = 1, 30 do
+	local pick = GetUnitToSpawn(auxUnits)
+	if pick then auxPicks[pick.unit] = true end
+end
+eq(auxPicks["mortartest"], nil, "Mortar-class unit never wins the generic aux batch")
+eq(auxPicks["snipertest"], true, "sniper remains aux-eligible")
+Context.AuxOwed = 0
+print("Mortar excluded from generic aux pool OK")
