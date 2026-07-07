@@ -13,3 +13,6 @@
 
 # Python build-script bytecode cache
 tools/__pycache__/
+
+# Local git worktrees used for isolated feature work
+.worktrees/
