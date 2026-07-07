@@ -121,7 +121,7 @@ local BackfillQuietSec    = 30   -- seconds after a wave start before idle backf
 -- sent to dig in on owned flags. Only fires while idle and only when we hold ground.
 local DefenderIntervalSec = 20   -- seconds between defender checks
 local DefenderCap      = 3       -- max live MG teams the bot keeps fielded
-local ArtyIntervalSec  = 45      -- seconds between artillery trickle checks (rarer than MG)
+ArtyIntervalSec  = 45      -- seconds between artillery trickle checks (rarer than MG)
 -- max live artillery pieces the bot keeps fielded, shared across every arty subtype (field/
 -- heavy/rocket) a faction has. At 1, the first subtype to unlock and win GetArtyUnit's
 -- priority-weighted pick (usually the cheapest/earliest, e.g. wespe_ss at unlock=900) fills
@@ -129,7 +129,7 @@ local ArtyIntervalSec  = 45      -- seconds between artillery trickle checks (ra
 -- the rest of the match -- e.g. ger_ss's sdkfz4_ss rocket halftrack (unlock=1200, lowest
 -- priority of the three) would essentially never get a turn. 2 gives a second subtype room
 -- to appear once its own unlock passes, without turning artillery into a real force pillar.
-local ArtyCap          = 2       -- max live artillery pieces the bot keeps fielded
+ArtyCap          = 2       -- max live artillery pieces the bot keeps fielded
 local DeepStrikePct        = 0.65   -- trigger deep-strike when enemy holds > this share of all flags
 local DeepStrikeIntervalSec = 180   -- seconds between airborne drops (frontline-equivalent of c(900) x 0.2)
 local DeepStrikeCap        = 2      -- max live airborne squads kept fielded
@@ -1823,6 +1823,39 @@ function DeepStrikeTrickle()
 	end
 end
 
+-- Shared "capped keep-alive trickle" pattern: attempt at most one spawn of a capped,
+-- cooldown-gated unit category. An optional per-faction floor (cfg.floorValue) bypasses the
+-- interval cooldown -- but never the cap -- when the category's live count is currently below
+-- that floor, so a faction's guaranteed minimum is reached faster than the normal keep-alive
+-- cadence would allow. Returns true if it attempted a spawn this tick (regardless of whether
+-- the attempt itself succeeded), so a caller's if/elseif chain treats this the same as any
+-- other trickle branch (at most one attempt per tick). Used by the ARTY and MORTAR trickles.
+function TryCappedTrickle(cfg)
+	local live = cfg.liveCountFn()
+	local floorUnmet = live < (cfg.floorValue or 0)
+	local intervalOk = Elapsed() - Context[cfg.lastTimeField] >= cfg.interval
+	if not (floorUnmet or intervalOk) then return false end
+	if live >= cfg.cap then return false end
+	if cfg.phaseGate and not cfg.phaseGate() then return false end
+	if HeldFlagCount() <= 0 then return false end
+	if not SpawnSlotFree() then return false end
+
+	Context[cfg.lastTimeField] = Elapsed()
+	local unit = cfg.unitPickerFn()
+	if unit then
+		Context.SpawnInfo = unit
+		local ok = BotApi.Commands:Spawn(unit.unit, MaxSquadSize)
+		print("[AISPAWN] " .. cfg.label .. " try=" .. tostring(unit.unit) .. " ok=" .. tostring(ok))
+		if ok then
+			ClaimSpawnSlot({ kind = "trickle", info = unit })
+		else
+			Context.FailCooldown[unit.unit] = Elapsed()
+		end
+		UpdateUnitToSpawn(Context.Purchase)
+	end
+	return true
+end
+
 function OnGameQuant()
 	Context.MatchQuants = Context.MatchQuants + 1
 	AdvanceClock()
@@ -1918,22 +1951,12 @@ function OnGameQuant()
 				end
 				UpdateUnitToSpawn(Context.Purchase)
 			end
-		elseif Elapsed() - Context.LastArtyTime >= ArtyIntervalSec
-		and CurrentPhase(Elapsed()).name ~= "early"
-		and HeldFlagCount() > 0 and LiveArtyCount() < ArtyCap and SpawnSlotFree() then
-			Context.LastArtyTime = Elapsed()
-			local art = GetArtyUnit()
-			if art then
-				Context.SpawnInfo = art -- routed as a defender (DefenderClasses[ArtilleryTank]=true)
-				local ok = BotApi.Commands:Spawn(art.unit, MaxSquadSize)
-				print("[AISPAWN] ARTY try=" .. tostring(art.unit) .. " ok=" .. tostring(ok))
-				if ok then
-					ClaimSpawnSlot({ kind = "trickle", info = art })
-				else
-					Context.FailCooldown[art.unit] = Elapsed()
-				end
-				UpdateUnitToSpawn(Context.Purchase)
-			end
+		elseif TryCappedTrickle({
+			lastTimeField = "LastArtyTime", interval = ArtyIntervalSec, cap = ArtyCap,
+			liveCountFn = LiveArtyCount, unitPickerFn = GetArtyUnit, label = "ARTY",
+			phaseGate = function() return CurrentPhase(Elapsed()).name ~= "early" end,
+			floorValue = FactionBias[BotApi.Instance.army] and FactionBias[BotApi.Instance.army].artillery,
+		}) then
 		elseif Elapsed() - Context.LastWaveTime >= BackfillQuietSec
 		and Elapsed() - Context.LastBackfillTime >= BackfillIntervalSec and SpawnSlotFree() then
 			Context.LastBackfillTime = Elapsed()

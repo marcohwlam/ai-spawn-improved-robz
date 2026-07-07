@@ -46,3 +46,61 @@ eq(DecideTier(late, empty, false, mediumIneligible, false, { medium = 5 }), "lig
 eq(DecideTier(late, empty, false, allOk), "light", "nil bias: identical to pre-feature behavior")
 eq(DecideTier(late, empty, false, allOk, false, {}), "light", "empty bias table: no floors, normal selection")
 print("DecideTier floor OK")
+
+-- TryCappedTrickle: floor-unmet bypasses the interval cooldown but never the cap.
+local savedGerRoster = Purchases[1].Units["ger"]
+Purchases[1].Units["ger"] = {
+	{ priority = 1.0, class = UnitClass.ArtilleryTank, unit = "testarty", unlock = 0 },
+}
+Context.FieldUnits = {}
+Context.LastArtyTime = 0
+Context.GameClock = 1 -- 1s elapsed: far under ArtyIntervalSec(45), interval alone would block
+Context.PendingSpawn = nil
+Context.SpawnPauseUntil = 0
+BotApi.Scene.Flags = { { name = "f1", occupant = 1 } }
+local spawned = nil
+local savedSpawn = BotApi.Commands.Spawn
+BotApi.Commands.Spawn = function(_, unit) spawned = unit; return true end
+local savedUpdateUnitToSpawn = UpdateUnitToSpawn
+UpdateUnitToSpawn = function() end -- PIter/Purchases plumbing is irrelevant to these assertions
+
+local acted = TryCappedTrickle({
+	lastTimeField = "LastArtyTime", interval = ArtyIntervalSec, cap = ArtyCap,
+	liveCountFn = LiveArtyCount, unitPickerFn = GetArtyUnit, label = "ARTY",
+	floorValue = 1,
+})
+eq(acted, true, "floor-unmet bypasses the interval cooldown")
+eq(spawned, "testarty", "the floor-forced attempt actually spawns the unit")
+
+-- Cap is never bypassed, even with an unmet floor.
+Context.FieldUnits = { [1] = { class = UnitClass.ArtilleryTank, unit = "testarty" },
+                        [2] = { class = UnitClass.ArtilleryTank, unit = "testarty" } } -- 2 live == ArtyCap
+Context.LastArtyTime = 0
+Context.GameClock = 1
+spawned = nil
+local actedAtCap = TryCappedTrickle({
+	lastTimeField = "LastArtyTime", interval = ArtyIntervalSec, cap = ArtyCap,
+	liveCountFn = LiveArtyCount, unitPickerFn = GetArtyUnit, label = "ARTY",
+	floorValue = 5, -- absurdly high, would always be "unmet"
+})
+eq(actedAtCap, false, "cap still blocks even when the floor is unmet")
+eq(spawned, nil, "no spawn attempted once the cap is reached")
+
+-- With no floor (nil), behavior matches the pre-refactor ARTY gate exactly: blocked by the
+-- interval cooldown when it hasn't elapsed yet.
+Context.FieldUnits = {}
+Context.LastArtyTime = 0
+Context.GameClock = 1
+spawned = nil
+local actedNoFloor = TryCappedTrickle({
+	lastTimeField = "LastArtyTime", interval = ArtyIntervalSec, cap = ArtyCap,
+	liveCountFn = LiveArtyCount, unitPickerFn = GetArtyUnit, label = "ARTY",
+})
+eq(actedNoFloor, false, "no floor: interval cooldown still blocks exactly as before")
+eq(spawned, nil, "no spawn attempted")
+
+BotApi.Commands.Spawn = savedSpawn
+UpdateUnitToSpawn = savedUpdateUnitToSpawn
+Purchases[1].Units["ger"] = savedGerRoster
+Context.FieldUnits = {}
+print("TryCappedTrickle OK")
