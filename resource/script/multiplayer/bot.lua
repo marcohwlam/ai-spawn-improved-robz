@@ -587,6 +587,27 @@ function GetMortarUnit()
 	return GetRandomItem(mortars, function(t) return t.priority end)
 end
 
+-- Dev-time self-check: a faction's artillery/mortar floor must never exceed that category's
+-- cap (ArtyCap/MortarCap) -- a floor above the cap could never be satisfied and would spin
+-- TryCappedTrickle's floor-bypass forever. Not wired into OnGameStart (a shipped data mistake
+-- should not crash the mod at match start); run from the test suite instead, same as
+-- tools/check_unit_roster.py's roster-correctness checks. Pure. Returns a list of violation
+-- strings; empty means every faction's data is consistent.
+function ValidateFactionBias()
+	local violations = {}
+	local caps = { artillery = ArtyCap, mortar = MortarCap }
+	for army, bias in pairs(FactionBias or {}) do
+		for cat, cap in pairs(caps) do
+			local floor = bias[cat]
+			if floor and floor > cap then
+				table.insert(violations, army .. "." .. cat .. ": floor " .. tostring(floor)
+					.. " exceeds cap " .. tostring(cap))
+			end
+		end
+	end
+	return violations
+end
+
 -- An airborne (paradrop) unit from the current faction roster, drawn by priority, or nil.
 function GetAirborneUnit()
 	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]

@@ -152,3 +152,19 @@ eq(auxPicks["mortartest"], nil, "Mortar-class unit never wins the generic aux ba
 eq(auxPicks["snipertest"], true, "sniper remains aux-eligible")
 Context.AuxOwed = 0
 print("Mortar excluded from generic aux pool OK")
+
+-- ValidateFactionBias: a faction's artillery/mortar floor must never exceed that category's
+-- cap (a floor above the cap could never be satisfied and would spin TryCappedTrickle's
+-- floor-bypass forever without ever completing).
+local savedBias = FactionBias
+FactionBias = { ger = { artillery = ArtyCap + 1 } }
+eq(#ValidateFactionBias(), 1, "one violation for a floor above its cap")
+FactionBias = { ger = { artillery = ArtyCap } }
+eq(#ValidateFactionBias(), 0, "floor exactly at the cap is not a violation")
+FactionBias = { ger = { mortar = MortarCap + 1 } }
+eq(#ValidateFactionBias(), 1, "one violation for a mortar floor above MortarCap")
+FactionBias = savedBias
+local shipped = ValidateFactionBias()
+eq(#shipped, 0, "shipped FactionBias data has no floor exceeding its cap: "
+	.. table.concat(shipped, "; "))
+print("ValidateFactionBias OK")
