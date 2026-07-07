@@ -51,6 +51,24 @@ FactionPhases = {
 	["rus_guard"] = { mid = 750, late = 1240 },
 }
 
+-- Per-faction minimum-count floor: a category short-circuits DecideTier (tier categories) or
+-- TryCappedTrickle's interval cooldown (artillery/mortar) once the field's live count for that
+-- category drops below this value. Categories omitted default to 0 (no floor, unchanged
+-- behavior). Categories: heavy | medium | light | rifle | smg | artillery | mortar. Values are
+-- grounded in each faction's real-world doctrine -- see
+-- docs/superpowers/specs/2026-07-06-faction-composition-bias-design.md for the rationale
+-- behind each entry.
+FactionBias = {
+	ger       = { medium = 1 },      -- Blitzkrieg armor spearhead
+	ger_ss    = { light = 1 },       -- Panzergrenadier mechanized infantry
+	ger2      = { rifle = 1 },       -- Ostfront defensive infantry attrition
+	usa       = { artillery = 1 },   -- King of Battle
+	rus       = { smg = 1 },         -- PPSh assault infantry waves
+	rus_guard = { heavy = 1 },       -- Guards' first pick of heavy armor
+	jap       = { mortar = 1 },      -- Infiltration doctrine, light infantry weapons
+	eng       = { artillery = 1 },   -- Colossal cracks artillery preparation
+}
+
 Purchases = {
 
 	{--single full roster, infinite (category-driven selection)
