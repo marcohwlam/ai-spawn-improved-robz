@@ -103,6 +103,7 @@ BotApi.Commands.Spawn = savedSpawn
 UpdateUnitToSpawn = savedUpdateUnitToSpawn
 Purchases[1].Units["ger"] = savedGerRoster
 Context.FieldUnits = {}
+BotApi.Scene.Flags = {}
 print("TryCappedTrickle OK")
 
 -- LiveMortarCount counts only Mortar-class FieldUnits entries.
@@ -168,3 +169,26 @@ local shipped = ValidateFactionBias()
 eq(#shipped, 0, "shipped FactionBias data has no floor exceeding its cap: "
 	.. table.concat(shipped, "; "))
 print("ValidateFactionBias OK")
+
+-- TryCappedTrickle: when every gate condition (interval/floor, cap, phase, held-flag,
+-- spawn-slot) passes but unitPickerFn finds nothing spawnable right now (e.g. everything
+-- unlocked-but-unaffordable, or benched by FailCooldown), the function must fall through
+-- (return false) instead of claiming the idle-tick window -- otherwise it silently blocks
+-- BACKFILL (and, before ARTY, DEFENDER) from ever getting a turn on quants where the
+-- category has an unmet floor but no candidate. See the 2026-07-06 final-review fix.
+Context.FieldUnits = {}
+Context.LastArtyTime = 0
+Context.GameClock = 1 -- far under ArtyIntervalSec: only the unmet floor should let this through
+Context.PendingSpawn = nil
+Context.SpawnPauseUntil = 0
+BotApi.Scene.Flags = { { name = "f1", occupant = 1 } }
+local actedNoUnit = TryCappedTrickle({
+	lastTimeField = "LastArtyTime", interval = ArtyIntervalSec, cap = ArtyCap,
+	liveCountFn = LiveArtyCount,
+	unitPickerFn = function() return nil end, -- no spawnable unit right now
+	label = "ARTY",
+	floorValue = 1,
+})
+eq(actedNoUnit, false, "no spawnable unit: falls through instead of claiming the idle-tick window")
+BotApi.Scene.Flags = {}
+print("TryCappedTrickle no-unit fallthrough OK")

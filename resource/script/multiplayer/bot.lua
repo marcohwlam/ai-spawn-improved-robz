@@ -122,6 +122,9 @@ local BackfillQuietSec    = 30   -- seconds after a wave start before idle backf
 -- sent to dig in on owned flags. Only fires while idle and only when we hold ground.
 local DefenderIntervalSec = 20   -- seconds between defender checks
 local DefenderCap      = 3       -- max live MG teams the bot keeps fielded
+-- Global (not local), unlike the other tuning constants below: tests reference these by name
+-- from outside bot.lua's dofile'd chunk (Lua file-locals in a dofile'd chunk are invisible to
+-- code outside it).
 ArtyIntervalSec  = 45      -- seconds between artillery trickle checks (rarer than MG)
 -- max live artillery pieces the bot keeps fielded, shared across every arty subtype (field/
 -- heavy/rocket) a faction has. At 1, the first subtype to unlock and win GetArtyUnit's
@@ -1904,17 +1907,16 @@ function TryCappedTrickle(cfg)
 
 	Context[cfg.lastTimeField] = Elapsed()
 	local unit = cfg.unitPickerFn()
-	if unit then
-		Context.SpawnInfo = unit
-		local ok = BotApi.Commands:Spawn(unit.unit, MaxSquadSize)
-		print("[AISPAWN] " .. cfg.label .. " try=" .. tostring(unit.unit) .. " ok=" .. tostring(ok))
-		if ok then
-			ClaimSpawnSlot({ kind = "trickle", info = unit })
-		else
-			Context.FailCooldown[unit.unit] = Elapsed()
-		end
-		UpdateUnitToSpawn(Context.Purchase)
+	if not unit then return false end
+	Context.SpawnInfo = unit
+	local ok = BotApi.Commands:Spawn(unit.unit, MaxSquadSize)
+	print("[AISPAWN] " .. cfg.label .. " try=" .. tostring(unit.unit) .. " ok=" .. tostring(ok))
+	if ok then
+		ClaimSpawnSlot({ kind = "trickle", info = unit })
+	else
+		Context.FailCooldown[unit.unit] = Elapsed()
 	end
+	UpdateUnitToSpawn(Context.Purchase)
 	return true
 end
 
