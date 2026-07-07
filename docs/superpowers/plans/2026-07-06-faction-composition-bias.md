@@ -571,13 +571,20 @@ In `resource/script/multiplayer/bot.lua`, immediately after the `ArtyCap` line (
 line 132):
 
 ```lua
-local ArtyCap          = 2       -- max live artillery pieces the bot keeps fielded
+ArtyCap          = 2       -- max live artillery pieces the bot keeps fielded
 -- Hand-carried mortar keep-alive, mirroring the artillery pattern above: its own cap+interval
 -- pair, independent of the generic aux batch (which would otherwise let it compete with
 -- AT/MG/sniper/officer/AA for a fixed AuxPerCycle=2 slot -- see the collectAux exclusion).
-local MortarIntervalSec = 45     -- seconds between mortar trickle checks
-local MortarCap         = 2      -- max live hand-carried mortars the bot keeps fielded
+MortarIntervalSec = 45     -- seconds between mortar trickle checks
+MortarCap         = 2      -- max live hand-carried mortars the bot keeps fielded
 ```
+
+Note: `ArtyIntervalSec`/`ArtyCap` were already promoted from `local` to global in Task 3 (a
+necessary deviation discovered there — `bot.lua` is loaded via `dofile` inside
+`tests/harness.lua`, and Lua file-locals in a `dofile`d chunk are invisible to code outside
+that chunk, e.g. a spec file that references the name directly). `MortarIntervalSec`/
+`MortarCap` are declared global from the start here for the same reason: Task 5's test
+references `MortarCap` by name directly from `tests/bias_spec.lua`.
 
 - [ ] **Step 3b: Add `LastMortarTime` to the module-level `Context` default table**
 
