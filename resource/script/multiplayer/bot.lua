@@ -1103,8 +1103,25 @@ end
 
 -- Choose the tier whose share is furthest below its target, among phase-allowed tiers
 -- that actually have a spawnable candidate. enemyHasTanks adds a small armor lean.
--- losing bumps the smg weight to 2. Pure: all inputs passed in, no BotApi/Context reads.
-function DecideTier(phase, field, enemyHasTanks, tierEligible, losing)
+-- losing bumps the smg weight to 2. `bias` (optional, a FactionBias[army]-shaped table) is
+-- checked FIRST, restricted to tierEligible: a tier whose live count is below its floor wins
+-- immediately, skipping the weight/deficit math (and the enemyHasTanks/losing adjustments)
+-- below. The tierEligible restriction is load-bearing: it keeps the floor from ever forcing
+-- a tier that hasn't unlocked yet for this phase/faction, which would otherwise starve every
+-- other tier for the rest of the phase (same failure shape as the pre-fix PruneGroups
+-- group-starvation bug from the spawn-reliability work). Pure: all inputs passed in, no
+-- BotApi/Context reads.
+function DecideTier(phase, field, enemyHasTanks, tierEligible, losing, bias)
+	if bias then
+		local order = { "heavy", "medium", "light", "rifle", "smg" }
+		for i = 1, #order do
+			local tier = order[i]
+			if tierEligible[tier] and (field[tier] or 0) < (bias[tier] or 0) then
+				return tier
+			end
+		end
+	end
+
 	local targets = phase.targets
 	local totalT = 0
 	for tier, w in pairs(targets) do
@@ -1256,7 +1273,8 @@ function GetUnitToSpawn(units)
 		end
 	end
 
-	local tier = DecideTier(phase, field, enemyHasTanks, tierEligible, FlagDeficit() > 0)
+	local tier = DecideTier(phase, field, enemyHasTanks, tierEligible, FlagDeficit() > 0,
+		FactionBias[BotApi.Instance.army])
 	local cands = byTier[tier]
 	if not cands or #cands == 0 then cands = pool end
 	return GetRandomItem(cands, weightOf)
