@@ -120,6 +120,8 @@ Within a wave, spawns are spread across quants (`WaveSpawnSpacing`) because the
 engine accepts ~1 `Spawn()` per tick; a burst-spawn wastes manpower on rejected
 calls.
 
+**Faction composition bias** applies a per-faction minimum-count floor (`FactionBias` table, documented in `docs/superpowers/specs/2026-07-06-faction-composition-bias-design.md`) for 7 categories (the 5 existing tiers plus `artillery`/`mortar`), short-circuiting `DecideTier` and a shared `TryCappedTrickle` helper before the existing ratio/cap logic runs.
+
 ### 2. Groups (`ManageGroups`, `ApportionArmor`, `PickGroupTarget`, `PickSubTarget`)
 Up to `MaxGroups` (2) squads-of-squads share one attack target. `PickGroupTarget`
 is the single lever for "where does this army push" — it applies the routing
@@ -168,9 +170,3 @@ logic, and an end-to-end integration spec through `GetUnitToSpawn`. Run via
 - **Unit roster checker** (`docs/superpowers/plans/2026-07-01-unit-roster-check.md`):
   a dev-time CLI to validate faction rosters against `bot.data.lua`; in
   progress per `.superpowers/sdd/task-4-report.md`.
-- **Faction composition bias** (`docs/superpowers/specs/2026-07-06-faction-composition-bias-design.md`):
-  design approved, not yet implemented. Adds a per-faction minimum-count floor
-  (`FactionBias`) for 7 categories (the 5 existing tiers plus new `artillery`/`mortar`
-  categories), short-circuiting `DecideTier`/a new shared `TryCappedTrickle` helper
-  before the existing ratio/cap logic runs. Restricted to `tierEligible` tiers so a
-  floor on a not-yet-unlocked tier can't starve the rest of the phase.
