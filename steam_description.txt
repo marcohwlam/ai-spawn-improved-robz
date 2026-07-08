@@ -43,4 +43,21 @@ Every fix ships with an offline test suite and gets cross-checked against RobZ's
 [h1]Source[/h1]
 Open source on GitHub: [url]https://github.com/marcohwlam/ai-spawn-improved-robz[/url]
 
+[h1]Change Log[/h1]
+
+[b]v1.1.0[/b]
+[list]
+[*] New: faction composition bias — each faction guarantees a minimum field count for a signature category (German medium armor, US/British artillery, Soviet SMG assault infantry, Japanese mortars, ...), layered on top of the existing composition ratio instead of replacing it
+[*] Fixed a spawn-confirmation desync that could misattribute one squad's confirmation to a different in-flight spawn and corrupt tier-ratio accounting
+[*] Fixed a freshly-created group getting deleted instead of retried when its first fill attempt failed, which could strand the bot on capper trickle alone for up to ~90s at match start
+[*] Fixed a pending-spawn-count leak on lost spawn confirmations that could wedge a group's fill slot
+[*] Corrected several ger_ss support-vehicle IDs that were silently failing to spawn (100% failure), added the missing SdKfz 251/10 support vehicle and LSSAH mechanized infantry entry
+[*] Mortars now get their own dedicated keep-alive trickle instead of competing untracked in the shared support pool
+[/list]
+
+[b]v1.0.0[/b]
+[list]
+[*] Initial release: phase-based wave spawning, frontier-first group targeting, dedicated keep-alive trickles for support units/assault guns/artillery, late-game heavy-tank affordability guard, crash-safe unit cap
+[/list]
+
 [i]Built on cbyyy2013's Better AI and frontlines AI concepts.[/i]
