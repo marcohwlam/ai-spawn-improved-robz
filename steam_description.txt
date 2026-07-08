@@ -14,6 +14,9 @@ Groups push the frontier instead of leapfrogging past your lines into a deep, un
 [b]📈 Phase-aware composition[/b]
 Early game is infantry and light armor. Mid game brings mediums. Late game the heavies roll out — all timed to each faction's real RobZ unlock schedule, not a generic guess.
 
+[b]🎖️ Faction-flavored doctrine[/b]
+Each faction now leans into its real WWII playbook — German armor spearheads, US artillery barrages, Soviet SMG assault waves, Japanese infiltration mortars. A guaranteed minimum for that faction's signature category is layered on top of the normal composition, not a random reshuffle.
+
 [b]🔧 Support units that actually show up[/b]
 Assault guns escort the main push instead of sulking at a backline artillery flag. Gun-halftracks and scout cars get their own guaranteed keep-alive slot instead of losing every draw to seven duplicate MG entries.
 
