@@ -12,31 +12,39 @@ flow, subsystem breakdown). Summary:
 
 ### Spawn economy
 - **Wave spawning** — the bot saves manpower and dumps it in waves. Base cadence is
-  60s and stretches to 90s (mid) / 135s (late) via each phase's `waveMult`, compressed
-  down toward a 10s floor the further behind on flags the team is
-  (`WaveIntervalNow`). Each wave spreads its spawns across game ticks so the engine
-  accepts every one instead of rejecting a burst.
+  110s and stretches via each phase's `waveMult` (early 1.0 / mid 1.5 / late 2.25),
+  then scaled symmetrically by the team's flag win/loss share (±150%): winning
+  lengthens the gap to bank MP for a stronger follow-up, losing shortens it, floored
+  at 35s (`WaveIntervalNow`). Each wave spreads its spawns across game ticks so the
+  engine accepts every one instead of rejecting a burst.
 - **Time phases** — EARLY/MID/LATE, boundaries resolved per-faction
   (`FactionPhases`), anchored to that faction's real RobZ unlock times — e.g. usa
   mid=530s/late=1200s, ger mid=630s/late=1500s, jap mid=580s/late=1380s. The global
   `Phases` table (180/480) is only a fallback for a faction with no `FactionPhases`
   entry; every shipped faction has one, so 180/480 never actually applies in play.
   Each phase sets the target composition, wave budget, and the heaviest armor tier
-  allowed.
-- **Four tiers** — infantry / light / medium / heavy, with per-phase target ratios
-  (EARLY 0:0:1:4, MID 0:1:2:4, LATE 1:1:2:4 as heavy:medium:light:infantry). Light vs
-  medium is split at a 550-second recharge boundary.
+  allowed. Some factions (ger/ger_ss/ger2/jap) further override their late-phase
+  target ratio (`lateTargets`) to match their doctrine or roster (e.g. jap has no
+  heavy tier at all).
+- **Five tiers** — heavy / medium / light / rifle / smg, with per-phase target
+  ratios (EARLY -:-:3:3:1, MID -:2:3:1:1, LATE 1:2:2:1:1 as heavy:medium:light:
+  rifle:smg). `DecideTier` picks whichever eligible tier has the largest deficit
+  between its target share and its actual field share.
 - **Recharge-aware pool** — each unit's `;Nsec` reinforcement cooldown (baked into
   `recharge=`) benches it after a spawn, so the picker rotates units instead of failing.
 - **Fail cooldown** — a failed (unaffordable) spawn benches that unit ~10s so the picker
-  falls through to a cheaper tier and actually spends the manpower.
-- **Dynamic catch-up** — the further behind on flags, the larger the wave budget and the
-  shorter the gap between waves.
+  falls through to a cheaper tier and actually spends the manpower. A late-phase guard
+  additionally slows down every interval-gated spawn cadence (doubles it) for a while
+  after repeated heavy-tank spawn failures, so manpower banks toward the heavy instead
+  of draining into cheaper filler — without the field ever going fully empty.
 - **Faction composition bias** *(see
-  `docs/superpowers/specs/2026-07-06-faction-composition-bias-design.md`)* — a per-faction
-  minimum-count floor (e.g. ger medium armor, usa artillery, rus smg, jap mortar) grounded
-  in each faction's real-world doctrine, layered as a short-circuit on top of the existing
-  tier ratio rather than replacing it.
+  `docs/superpowers/specs/2026-07-06-faction-composition-bias-design.md`)* — a
+  per-faction, per-phase minimum-count floor across 10 categories (the 5 tiers plus
+  artillery/mortar/tank-destroyers/MG/snipers), grounded in each faction's real-world
+  doctrine and free to bias a *different* category as a faction's phase changes (e.g.
+  `ger_ss` biases tank destroyers in mid, then heavy armor in late). Layered as a
+  short-circuit on top of the existing tier ratio and trickle cooldowns rather than
+  replacing them.
 
 ### Groups and routing
 - **Group system** — up to 2 squads-of-squads share one attack target each
@@ -63,9 +71,11 @@ flow, subsystem breakdown). Summary:
 ### Idle trickles (between waves, priority order, at most one spawn per tick)
 - **MG point defense** — a small, capped trickle of mobile MG teams digs in on owned
   flags.
-- **Artillery defenders** — rarer capped trickle of self-propelled/towed artillery.
-- **Officer / AT-rifle keep-alive** — replaces these roles if they die off, without
-  competing with the main wave budget.
+- **Artillery / mortar / tank-destroyer / sniper keep-alive** — rarer capped trickles,
+  each pulled out of the shared aux quota into its own cap+interval pair (tank
+  destroyers only trigger while the enemy fields tanks).
+- **Officer / AT-rifle / assault-gun / support-vehicle keep-alive** — replaces these
+  roles if they die off, without competing with the main wave budget.
 - **Neutral-flag cappers** — single soldiers grab uncontested flags and commit to
   their target flag until it's capped or lost, instead of re-picking every rotation.
 - **Airborne deep-strike** — a capped, late-phase-only trickle dropped near enemy

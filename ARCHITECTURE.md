@@ -112,15 +112,29 @@ entry (anchored to that faction's real RobZ unlock times), so the global
 skipping anything on recharge (`bot.data.lua` `;Nsec` cooldown) or
 `FailCooldown` (benched after an unaffordable spawn attempt).
 
-Wave cadence: `WaveIntervalNow()` starts from `WaveIntervalSec = 60` seconds,
-multiplied by the phase's `waveMult` (early 1.0 / mid 1.5 / late 2.25 → 60s /
-90s / 135s base), then compressed toward a `MinWaveIntervalSec = 10` floor as
-`FlagDeficit()` grows — the further behind on flags, the shorter the gap.
+Wave cadence: `WaveIntervalNow()` starts from `WaveIntervalSec = 110` seconds,
+multiplied by the phase's `waveMult` (early 1.0 / mid 1.5 / late 2.25), then
+scaled symmetrically by `FlagWinPct()` — (our flag share - enemy flag share),
+clamped to ±150% — so winning *lengthens* the gap (bank MP for a stronger
+follow-up) and losing *shortens* it, floored at `MinWaveIntervalSec = 35`.
 Within a wave, spawns are spread across quants (`WaveSpawnSpacing`) because the
 engine accepts ~1 `Spawn()` per tick; a burst-spawn wastes manpower on rejected
-calls.
+calls. A late-phase heavy-tank affordability guard (`HeavyFailStreakLimit`)
+doubles every interval-gated cadence (`IntervalMult()`) for `SpawnSlowdownSec`
+after repeated failed heavy spawns, instead of a hard stop — the field stays
+active while MP banks toward the heavy.
 
-**Faction composition bias** applies a per-faction minimum-count floor (`FactionBias` table, documented in `docs/superpowers/specs/2026-07-06-faction-composition-bias-design.md`) for 7 categories (the 5 existing tiers plus `artillery`/`mortar`), short-circuiting `DecideTier` and a shared `TryCappedTrickle` helper before the existing ratio/cap logic runs.
+**Faction composition bias** applies a per-faction minimum-count floor
+(`FactionBias` table, documented in
+`docs/superpowers/specs/2026-07-06-faction-composition-bias-design.md`) across
+10 categories (the 5 tiers plus `artillery`/`mortar`/`attank`/`mg`/`sniper`),
+short-circuiting `DecideTier`, the DEFENDER (MG) call site, and a shared
+`TryCappedTrickle` helper (artillery/mortar/attank/sniper) before the existing
+ratio/cap logic runs. `FactionBias[army]` is keyed by phase name first, so a
+faction can bias a *different* category per phase, not just a bigger floor on
+the same one (e.g. `ger_ss` biases `attank` in mid, `heavy` in late). ATTank
+and Sniper (like Mortar before them) are pulled out of the shared
+`AuxPerCycle=2` aux batch into their own dedicated capped trickles.
 
 ### 2. Groups (`ManageGroups`, `ApportionArmor`, `PickGroupTarget`, `PickSubTarget`)
 Up to `MaxGroups` (2) squads-of-squads share one attack target. `PickGroupTarget`
@@ -139,11 +153,13 @@ regression, see roadmap): the filter chain must never return `nil` while any
 attackable flag exists — always fall back a stage rather than stall the group.
 
 ### 4. Trickles (between-wave, idle-only, ≤1 spawn/tick, priority-ordered)
-MG point defense, artillery defenders, officer/AT-rifle keep-alive, neutral-flag
-cappers (commit to one flag until capped or lost — `CapperTarget`), airborne
-deep-strike (late-phase only, gated separately from the normal wave/tier system),
-and ratio backfill. Each has its own interval + cap constant near the top of
-`bot.lua`.
+MG point defense, artillery/mortar/tank-destroyer/sniper keep-alive (the latter
+four share the `TryCappedTrickle` helper: cap, interval, live-count fn, unit
+picker, optional `FactionBias` floor and `phaseGate`), officer/AT-rifle/
+assault-gun/support-vehicle keep-alive, neutral-flag cappers (commit to one
+flag until capped or lost — `CapperTarget`), airborne deep-strike (late-phase
+only, gated separately from the normal wave/tier system), and ratio backfill.
+Each has its own interval + cap constant near the top of `bot.lua`.
 
 ### 5. Offline data generation (`tools/`)
 Python scripts read RobZ's own `.set`/mission files and emit generated Lua
