@@ -29,7 +29,7 @@ UnitClass = {
 Phases = {
 	{ name = "early", upto = 180,        targets = {                       light = 3, rifle = 3, smg = 1 }, budget = 14, waveMult = 1.0,  squadCap = 24, mainGroup = 4, subGroup = 3 },
 	{ name = "mid",   upto = 480,        targets = {            medium = 2, light = 3, rifle = 1, smg = 1 }, budget = 22, waveMult = 1.5,  squadCap = 26, mainGroup = 5, subGroup = 4 },
-	{ name = "late",  upto = 1000000000, targets = { heavy = 1, medium = 2, light = 3, rifle = 1, smg = 1 }, budget = 32, waveMult = 2.25, squadCap = 28, mainGroup = 6, subGroup = 4 },
+	{ name = "late",  upto = 1000000000, targets = { heavy = 1, medium = 2, light = 2, rifle = 1, smg = 1 }, budget = 32, waveMult = 2.25, squadCap = 28, mainGroup = 6, subGroup = 4 },
 }
 
 -- Per-faction phase boundaries (seconds), anchored to real RobZ unlock times.
@@ -41,32 +41,98 @@ Phases = {
 -- budget/waveMult/squadCap are NOT here; they stay shared on the global Phases template.
 FactionPhases = {
 	["eng"]       = { mid = 750, late = 1050 },
-	["ger"]       = { mid = 630, late = 1500 },
-	["ger_ss"]    = { mid = 630, late = 1500 },
+	-- ger/ger_ss/ger2: late medium target trimmed from the global 2 to 1 -- their FactionBias
+	-- heavy floor (see FactionBias below) already pulls the spearhead toward heavy late, so
+	-- the ratio's own medium weight is trimmed to match instead of double-counting armor lean.
+	["ger"]       = { mid = 630, late = 1500,
+	                  lateTargets = { heavy = 1, medium = 1, light = 2, rifle = 1, smg = 1 } },
+	["ger_ss"]    = { mid = 630, late = 1500,
+	                  lateTargets = { heavy = 1, medium = 1, light = 2, rifle = 1, smg = 1 } },
 	["usa"]       = { mid = 530, late = 1200 },
 	["rus"]       = { mid = 750, late = 1050 },
 	["jap"]       = { mid = 580, late = 1380,
-	                  lateTargets = { medium = 2, light = 3, rifle = 1, smg = 1 } },
-	["ger2"]      = { mid = 630, late = 1750 },
+	                  lateTargets = { medium = 2, light = 2, rifle = 1, smg = 1 } },
+	["ger2"]      = { mid = 630, late = 1750,
+	                  lateTargets = { heavy = 1, medium = 1, light = 2, rifle = 1, smg = 1 } },
 	["rus_guard"] = { mid = 750, late = 1240 },
 }
 
 -- Per-faction minimum-count floor: a category short-circuits DecideTier (tier categories) or
--- TryCappedTrickle's interval cooldown (artillery/mortar) once the field's live count for that
--- category drops below this value. Categories omitted default to 0 (no floor, unchanged
--- behavior). Categories: heavy | medium | light | rifle | smg | artillery | mortar. Values are
--- grounded in each faction's real-world doctrine -- see
+-- an interval cooldown (artillery/mortar/attank/sniper via TryCappedTrickle, mg via the
+-- DEFENDER call site) once the field's live count for that category drops below this value.
+-- Categories omitted default to 0 (no floor, unchanged behavior). Categories: heavy | medium |
+-- light | rifle | smg | artillery | mortar | attank | mg | sniper. Values are grounded in
+-- each faction's real-world doctrine -- see
 -- docs/superpowers/specs/2026-07-06-faction-composition-bias-design.md for the rationale
 -- behind each entry.
+--
+-- FactionBias[army] is keyed by phase name first ({early={cat=N,...}, mid={...}, late={...}},
+-- resolved by BiasFloor in bot.lua), so a faction can bias a *different* category per phase --
+-- not just a bigger floor on the same one -- as its real-world doctrine evolved over the war.
+-- A phase with no entry for a faction floors every category 0 (no-op; matches pre-feature
+-- behavior). Doctrines that hold from the opening minutes (mechanized infantry, infiltration,
+-- assault-infantry waves, defensive attrition) repeat the same category every phase. Doctrines
+-- that intensified or picked up a second arm as the match/war matured (armor spearhead gaining
+-- heavy tanks, artillery mass-fire buildup, Guards absorbing mass-produced mediums alongside
+-- their heavies) add or escalate a category from mid into late.
 FactionBias = {
-	ger       = { medium = 1 },      -- Blitzkrieg armor spearhead
-	ger_ss    = { light = 1 },       -- Panzergrenadier mechanized infantry
-	ger2      = { rifle = 1 },       -- Ostfront defensive infantry attrition
-	usa       = { artillery = 1 },   -- King of Battle
-	rus       = { smg = 1 },         -- PPSh assault infantry waves
-	rus_guard = { heavy = 1 },       -- Guards' first pick of heavy armor
-	jap       = { mortar = 1 },      -- Infiltration doctrine, light infantry weapons
-	eng       = { artillery = 1 },   -- Colossal cracks artillery preparation
+	-- Blitzkrieg armor spearhead: medium from mid, heavy (Tiger/Panther-class) takes over the
+	-- spearhead role late. MG42 teams anchoring the advance from the opening minutes.
+	ger = {
+		early = { mg = 1 },
+		mid   = { medium = 1 },
+		late  = { heavy = 1 },
+	},
+	-- Panzergrenadier mechanized infantry early; StuG/Hetzer/Jagdpanzer tank destroyers backing
+	-- the infantry from mid (SS Panzerjäger doctrine); late-war SS divisions traded that
+	-- mechanized mass for concentrated heavy armor (Tiger/King Tiger battalions).
+	ger_ss = {
+		early = { light = 1 },
+		mid   = { attank = 1 },
+		late  = { heavy = 1 },
+	},
+	-- Ostfront defensive infantry attrition early; reinforced with medium armor once it
+	-- unlocks at the mid boundary, then scarce heavy armor (Tiger II) piecemeal late.
+	ger2 = {
+		early = { rifle = 1 },
+		mid   = { medium = 1 },
+		late  = { heavy = 1 },
+	},
+	-- King of Battle: US mass/TOT artillery fire support, sustained from mid.
+	usa = {
+		mid  = { artillery = 1 },
+		late = { artillery = 1 },
+	},
+	-- PPSh assault infantry ("tommy gunner") waves early/mid, backed by Soviet sniper doctrine
+	-- (Lyudmila Pavlichenko-style marksmanship training) from the opening minutes; Deep Battle
+	-- doctrine's massed T-34 armor sweeps join from mid. Late-war, doctrine shifts to massed
+	-- artillery preparation (Katyusha/ISU-152 fire support) ahead of the armor.
+	rus = {
+		early = { smg = 1, sniper = 1 },
+		mid   = { smg = 1, medium = 1 },
+		late  = { medium = 1, artillery = 1 },
+	},
+	-- Guards' elite marksmanship training from the opening minutes; Guards artillery support
+	-- (Katyusha/lend-lease M7) from mid; by late-war T-34-85 mass production also reaches
+	-- Guards formations alongside their IS-series heavies.
+	rus_guard = {
+		early = { sniper = 1 },
+		mid   = { artillery = 1 },
+		late  = { heavy = 1 },
+	},
+	-- Infiltration/night-attack doctrine centered on light infantry weapons throughout;
+	-- Ho-Ni/Ha-To self-propelled artillery support joins from mid.
+	jap = {
+		early = { mortar = 1 },
+		mid   = { mortar = 1, artillery = 1 },
+		late  = { mortar = 1, artillery = 1 },
+	},
+	-- Montgomery's "colossal cracks" -- heavy artillery preparation, sustained from mid;
+	-- Churchill/Firefly heavy armor joins the set-piece assault late.
+	eng = {
+		mid  = { artillery = 1 },
+		late = { artillery = 1, heavy = 1 },
+	},
 }
 
 Purchases = {
@@ -468,7 +534,6 @@ Purchases = {
 				{priority=1.0, class=UnitClass.HeavyTank,     unit="is2_guard",     min_income=2.5, min_team=1, unlock=2160,},
 				{priority=2.0, class=UnitClass.ATTank,        unit="su85_guard",    min_income=1.5,},
 				{priority=1.0, class=UnitClass.ATTank,        unit="isu122_guard",  min_income=2.5, min_team=1,},
-				{priority=0.5, class=UnitClass.ArtilleryTank, unit="203b4_guard", min_income=2.5, min_team=1, unlock=1200, arty="heavy",},
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="bm13_guard", min_income=2.0, min_team=1, unlock=1200, arty="rocket",},
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="bm_8_24_guard", min_income=2.0, min_team=1, unlock=1200, arty="rocket",},
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="bm8-48_guard", min_income=2.0, min_team=1, unlock=900, arty="rocket",},

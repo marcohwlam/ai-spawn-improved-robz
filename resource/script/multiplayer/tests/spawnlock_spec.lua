@@ -44,22 +44,20 @@ eq(SpawnSlotFree(), true, "pending spawn times out and frees the slot")
 eq(Context.PendingSpawn, nil, "timed-out pending spawn is cleared")
 print("spawn timeout OK")
 
--- SpawnPauseUntil (heavy-fail-streak affordability guard): while Elapsed() < SpawnPauseUntil,
--- SpawnSlotFree must return false regardless of the pending-spawn state, so every trickle
--- (they all gate on SpawnSlotFree) is paused, not just the wave driver.
+-- SpawnSlowdownUntil (heavy-fail-streak affordability guard): unlike the old hard pause this
+-- replaced, an active slowdown window must NOT block SpawnSlotFree() -- the field keeps
+-- receiving spawns, just slower via IntervalMult at each interval check site (see
+-- heavy_fail_slowdown_spec.lua for the IntervalMult/streak-trigger assertions).
 Context.PendingSpawn = nil
 Context.GameClock = 100
 Context.MatchQuants = 7
-Context.SpawnPauseUntil = 250
-eq(SpawnSlotFree(), false, "paused: slot unavailable even on a fresh, unclaimed quant")
-
-Context.GameClock = 250
-eq(SpawnSlotFree(), true, "pause ends exactly at SpawnPauseUntil")
+Context.SpawnSlowdownUntil = 250
+eq(SpawnSlotFree(), true, "slowdown window active: slot still available on a fresh, unclaimed quant")
 
 Context.GameClock = 0
-Context.SpawnPauseUntil = 0
-eq(SpawnSlotFree(), true, "SpawnPauseUntil=0 (default/unset) never blocks")
-print("spawn pause gate OK")
+Context.SpawnSlowdownUntil = 0
+eq(SpawnSlotFree(), true, "SpawnSlowdownUntil=0 (default/unset) never blocks")
+print("spawn slowdown does not gate SpawnSlotFree OK")
 
 -- A timed-out non-aux group fill must release the group's pending count immediately, not
 -- leave it to PruneGroups' separate 3s staleSince timer to discover the leak later -- that
