@@ -44,14 +44,18 @@ eq(CurrentPhase(180).subGroup,  4, "mid sub 4")
 eq(CurrentPhase(480).mainGroup, 6, "late main 6")
 eq(CurrentPhase(480).subGroup,  4, "late sub 4")
 
--- DecideTier: late composition is light-dominant (heavy 1, medium 2, light 3, rifle 1,
--- smg 1; totalT 8 -> light share 3/8, medium 2/8, every other tier 1/8).
+-- DecideTier: late composition (heavy 1, medium 2, light 2, rifle 1, smg 1; totalT 7 ->
+-- light share 2/7, medium 2/7, every other tier 1/7). light and medium tie on target share;
+-- an empty field resolves the tie via `targets` table iteration order (light first).
 local late = CurrentPhase(480)
 local allOk = { heavy = true, medium = true, light = true, rifle = true, smg = true }
 
--- Empty field: light has the largest target share -> picked first.
+-- Empty field: light and medium tie for the largest target share (2/7 each) -> either may
+-- win depending on table iteration order; heavy/rifle/smg must still lose out.
 local empty = { heavy = 0, medium = 0, light = 0, rifle = 0, smg = 0, aux = 0 }
-eq(DecideTier(late, empty, false, allOk), "light", "light dominates an empty field")
+local emptyPick = DecideTier(late, empty, false, allOk)
+assert(emptyPick == "light" or emptyPick == "medium",
+	"light/medium tie dominates an empty field, got " .. tostring(emptyPick))
 
 -- Only rifle eligible (tanks on cooldown) -> rifle fallback.
 eq(DecideTier(late, empty, false, { rifle = true }), "rifle", "fallback to eligible tier")
@@ -63,7 +67,7 @@ local pick = DecideTier(late, lightFilled, true, allOk)
 assert(pick == "medium" or pick == "heavy", "enemy tanks leans armor, got " .. tostring(pick))
 
 -- Light already filled + losing: smg weight is bumped to 2, tying medium's own
--- target weight of 2 in late (heavy1/medium2/light3/rifle1/smg2) -> either may win
+-- target weight of 2 in late (heavy1/medium2/light2/rifle1/smg2) -> either may win
 -- depending on table iteration order; light/heavy/rifle must still lose out.
 local losingPick = DecideTier(late, lightFilled, false, allOk, true)
 assert(losingPick == "smg" or losingPick == "medium",
@@ -137,7 +141,8 @@ eq(ger[3].upto, 1000000000, "ger late is open-ended")
 eq(ger[1].budget,   Phases[1].budget,   "ger early budget shared with global")
 eq(ger[2].waveMult, Phases[2].waveMult, "ger mid waveMult shared with global")
 eq(ger[3].squadCap, Phases[3].squadCap, "ger late squadCap shared with global")
-eq(ger[3].targets.heavy, 1, "ger keeps global late targets (heavy present)")
+eq(ger[3].targets.heavy, 1, "ger late targets: heavy present")
+eq(ger[3].targets.medium, 1, "ger late targets: medium trimmed to 1 via lateTargets (global is 2)")
 
 local usa = ResolvePhases("usa")
 eq(usa[1].upto, 530,  "usa early ends at 530")
@@ -166,3 +171,49 @@ eq(CurrentPhase(1400).name, "late",  "jap 1400 is late (>= 1380)")
 Context.Phases = nil
 eq(CurrentPhase(180).name, "mid", "fallback to global Phases when Context.Phases is nil")
 print("CurrentPhase faction OK")
+
+-- FlagWinPct: (our share - enemy share) of all flags, in [-1,1], 0 when empty.
+BotApi.Scene.Flags = {}
+eq(FlagWinPct(), 0, "no flags -> 0")
+BotApi.Scene.Flags = {
+	{ name = "f1", occupant = 1 }, { name = "f2", occupant = 1 },
+	{ name = "f3", occupant = 1 }, { name = "f4", occupant = 2 },
+}
+eq(FlagWinPct(), 0.5, "3 ours, 1 enemy of 4 -> (3-1)/4 = 0.5")
+BotApi.Scene.Flags = {
+	{ name = "f1", occupant = 2 }, { name = "f2", occupant = 2 },
+	{ name = "f3", occupant = 2 }, { name = "f4", occupant = 1 },
+}
+eq(FlagWinPct(), -0.5, "1 ours, 3 enemy of 4 -> (1-3)/4 = -0.5")
+BotApi.Scene.Flags = {
+	{ name = "f1", occupant = 0 }, { name = "f2", occupant = 0 },
+}
+eq(FlagWinPct(), 0, "all neutral -> 0")
+print("FlagWinPct OK")
+
+-- WaveIntervalNow: symmetric around the phase-scaled base -- winning (positive FlagWinPct)
+-- lengthens the gap, losing (negative) shortens it, floored at MinWaveIntervalSec.
+Context.Phases = nil
+BotApi.Scene.Flags = {}
+Context.GameClock = 0 -- early phase, waveMult 1.0 -> base = WaveIntervalSec
+eq(WaveIntervalNow(), WaveIntervalSec, "even (0 flags): base gap, unscaled")
+
+BotApi.Scene.Flags = {
+	{ name = "f1", occupant = 1 }, { name = "f2", occupant = 1 }, { name = "f3", occupant = 2 },
+}
+-- winPct = (2-1)/3 = 1/3 -> base * (1 + 1/3)
+eq(WaveIntervalNow(), math.floor(WaveIntervalSec * (1 + 1/3)), "winning 1/3 lengthens the gap")
+
+BotApi.Scene.Flags = {
+	{ name = "f1", occupant = 2 }, { name = "f2", occupant = 2 }, { name = "f3", occupant = 1 },
+}
+-- winPct = (1-2)/3 = -1/3 -> base * (1 - 1/3)
+eq(WaveIntervalNow(), math.floor(WaveIntervalSec * (1 - 1/3)), "losing 1/3 shortens the gap")
+
+BotApi.Scene.Flags = {
+	{ name = "f1", occupant = 2 }, { name = "f2", occupant = 2 }, { name = "f3", occupant = 2 },
+	{ name = "f4", occupant = 2 },
+} -- winPct = (0-4)/4 = -1 -> base * 0 = 0, floored at MinWaveIntervalSec
+eq(WaveIntervalNow(), MinWaveIntervalSec, "losing every flag floors at MinWaveIntervalSec")
+BotApi.Scene.Flags = {}
+print("WaveIntervalNow OK")

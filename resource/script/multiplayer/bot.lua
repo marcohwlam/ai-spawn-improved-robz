@@ -36,6 +36,8 @@ Context = {
 	LastDefenderTime = 0, -- Elapsed() at last MG defender trickle
 	LastArtyTime = 0,     -- Elapsed() at last artillery defender trickle
 	LastMortarTime = 0,   -- Elapsed() at last mortar keep-alive trickle
+	LastAtTankTime = 0,   -- Elapsed() at last tank-destroyer keep-alive trickle
+	LastSniperTime = 0,   -- Elapsed() at last sniper keep-alive trickle
 	LastDeepStrikeTime = 0, -- Elapsed() at last airborne deep-strike drop
 	AirborneSquads = {},    -- squadId -> true, elite airborne squads sent at enemy bases
 	LastOfficerTime = 0,  -- Elapsed() at last officer keep-alive
@@ -65,8 +67,11 @@ Context = {
 -- unit landed and the rest were rejected, leaving 3000+ MP unspent at game end).
 -- Each wave attempts up to phase.budget units, one every WaveSpawnSpacing quants,
 -- and ends early only after MaxWaveFails spawns in a row fail (= truly out of MP).
-local WaveIntervalSec     = 90   -- seconds between wave starts
-local MinWaveIntervalSec  = 15   -- floor: never faster than ~15s even when far behind
+-- Global (not local), unlike the other tuning constants nearby: tests reference these by name
+-- from outside bot.lua's dofile'd chunk (Lua file-locals in a dofile'd chunk are invisible to
+-- code outside it).
+WaveIntervalSec     = 110  -- seconds between wave starts
+MinWaveIntervalSec  = 35   -- floor: never faster than ~35s even when far behind
 local WaveSpawnSpacing = 7      -- quants between spawns inside a wave (~0.1s)
 local PendingSpawnTimeoutQuants = 20 -- give up on an unconfirmed spawn after this many quants
 local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spent, end wave
@@ -75,10 +80,14 @@ local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spen
 -- expensive right now) just burns the attempt cadence without ever landing one, while cheaper
 -- tiers keep draining MP behind it -- the army never actually accumulates enough to afford
 -- the heavy. After HeavyFailStreakLimit consecutive failed heavy-tier Spawn attempts in the
--- late phase, pause ALL spawning (every trickle funnels through SpawnSlotFree) for
--- SpawnPauseSec so MP can bank up toward the heavy instead of being spent on filler.
-local HeavyFailStreakLimit = 3     -- consecutive failed late-phase heavy Spawn attempts => pause
-local SpawnPauseSec        = 150   -- seconds all spawning is paused once the streak trips
+-- late phase, slow down EVERY interval-gated spawn cadence (every check site multiplies its
+-- base interval by IntervalMult()) for SpawnSlowdownSec instead of a hard stop -- a -100% rate
+-- change (interval doubled) so MP still banks up toward the heavy, just at half the outflow,
+-- while DEFENDER/backfill/etc keep enough on the field that it doesn't go empty during the
+-- window.
+local HeavyFailStreakLimit = 3     -- consecutive failed late-phase heavy Spawn attempts => slow down
+local SpawnSlowdownSec     = 150   -- seconds every interval runs at HeavyFailSlowdownMult once tripped
+local HeavyFailSlowdownMult = 2.0  -- -100% rate change: every interval doubles during the window
 
 -- Neutral-flag capper trickle: every NeutralInterval quants, if any flag is
 -- neutral, spawn one cheap single soldier ordered to grab a neutral flag.
@@ -115,17 +124,20 @@ local FailCooldownSec     = 10   -- seconds bench after a failed spawn
 -- BackfillInterval quants while idle to keep the composition near its ratio.
 -- A quiet window after each wave start keeps backfill from merging into the wave
 -- and reading as one continuous infantry stream.
-local BackfillIntervalSec = 30   -- seconds between idle backfill spawns
+local BackfillIntervalSec = 50   -- seconds between idle backfill spawns
 local BackfillQuietSec    = 30   -- seconds after a wave start before idle backfill may resume
 
 -- Between-wave defensive trickle: a small, capped number of mobile MG teams (mgs2)
 -- sent to dig in on owned flags. Only fires while idle and only when we hold ground.
-local DefenderIntervalSec = 20   -- seconds between defender checks
-local DefenderCap      = 3       -- max live MG teams the bot keeps fielded
+-- Global (not local): tests reference these by name from outside bot.lua's dofile'd chunk
+-- (Lua file-locals in a dofile'd chunk are invisible to code outside it), and ValidateFactionBias
+-- needs DefenderCap to check the "mg" FactionBias category.
+DefenderIntervalSec = 40   -- seconds between defender checks
+DefenderCap      = 3       -- max live MG teams the bot keeps fielded
 -- Global (not local), unlike the other tuning constants below: tests reference these by name
 -- from outside bot.lua's dofile'd chunk (Lua file-locals in a dofile'd chunk are invisible to
 -- code outside it).
-ArtyIntervalSec  = 45      -- seconds between artillery trickle checks (rarer than MG)
+ArtyIntervalSec  = 65      -- seconds between artillery trickle checks (rarer than MG)
 -- max live artillery pieces the bot keeps fielded, shared across every arty subtype (field/
 -- heavy/rocket) a faction has. At 1, the first subtype to unlock and win GetArtyUnit's
 -- priority-weighted pick (usually the cheapest/earliest, e.g. wespe_ss at unlock=900) fills
@@ -137,10 +149,23 @@ ArtyCap          = 2       -- max live artillery pieces the bot keeps fielded
 -- Hand-carried mortar keep-alive, mirroring the artillery pattern above: its own cap+interval
 -- pair, independent of the generic aux batch (which would otherwise let it compete with
 -- AT/MG/sniper/officer/AA for a fixed AuxPerCycle=2 slot -- see the collectAux exclusion).
-MortarIntervalSec = 45     -- seconds between mortar trickle checks
+MortarIntervalSec = 65     -- seconds between mortar trickle checks
 MortarCap         = 2      -- max live hand-carried mortars the bot keeps fielded
+-- Tank destroyer (UnitClass.ATTank) keep-alive, mirroring the artillery/mortar pattern above:
+-- its own cap+interval pair, independent of the generic aux batch (which would otherwise let
+-- it compete with AT-infantry/MG/sniper/officer/AA for a fixed AuxPerCycle=2 slot -- see the
+-- collectAux exclusion). Still gated by AuxEligible-equivalent logic (enemyHasTanks) inside
+-- the call site, not this trickle itself -- see the ATTANK call site.
+AtTankIntervalSec = 65     -- seconds between tank-destroyer trickle checks
+AtTankCap         = 1      -- max live tank destroyers the bot keeps fielded
+-- Sniper keep-alive, mirroring the artillery/mortar/attank pattern above: its own cap+interval
+-- pair, independent of the generic aux batch (which would otherwise let it compete with
+-- MG/officer/AA for a fixed AuxPerCycle=2 slot -- see the collectAux exclusion). No phaseGate
+-- (unlike ATTank's enemyHasTanks gate): a sniper is useful regardless of enemy composition.
+SniperIntervalSec = 65     -- seconds between sniper trickle checks
+SniperCap         = 1      -- max live snipers the bot keeps fielded
 local DeepStrikePct        = 0.65   -- trigger deep-strike when enemy holds > this share of all flags
-local DeepStrikeIntervalSec = 180   -- seconds between airborne drops (frontline-equivalent of c(900) x 0.2)
+local DeepStrikeIntervalSec = 200   -- seconds between airborne drops (frontline-equivalent of c(900) x 0.2)
 local DeepStrikeCap        = 2      -- max live airborne squads kept fielded
 -- Firing reach per artillery subtype, in flag_sectors.lua world units (reach = range x 10,
 -- see the 2026-06-29 placement design). Used to keep a piece on the REARMOST owned flag
@@ -154,18 +179,18 @@ local ArtySafeMin      = 1500    -- world units; standoff floor from the nearest
 -- Officer keep-alive: after OfficerUnlock seconds, keep up to OfficerCap officers parked
 -- at the spawn (no capture order) -- they hold the unit cap and must not die at the front.
 local OfficerUnlock   = 600     -- seconds before officers become available (~10 min)
-local OfficerIntervalSec  = 30   -- seconds between officer checks
+local OfficerIntervalSec  = 50   -- seconds between officer checks
 local OfficerCap      = 1       -- max live officers
 
 -- AT-rifle keep-alive: from mid phase on, keep one AT rifle on the field (anti half-track).
-local AtRifleIntervalSec  = 20   -- seconds between AT-rifle keep-alive checks
+local AtRifleIntervalSec  = 40   -- seconds between AT-rifle keep-alive checks
 local AtRifleCap      = 1       -- max live AT rifles kept
 
 -- Assault-gun escort keep-alive: units tagged assault=true (stuh42, brummbar, ...) are
 -- close-support gun-howitzers, not backline artillery -- they escort a group and follow its
 -- target, same shape as the AT-rifle keep-alive above, instead of parking at a rear
 -- safe-band flag via ArtilleryTargetFlag like wespe/hummel/sdkfz4.
-local AssaultGunIntervalSec = 40   -- seconds between assault-gun keep-alive checks
+local AssaultGunIntervalSec = 60   -- seconds between assault-gun keep-alive checks
 local AssaultGunCap    = 1       -- max live assault guns kept PER DESIGNATED INSTANCE (see below)
 
 -- True if this bot instance is the one designated to run the assault-gun keep-alive trickle.
@@ -184,7 +209,7 @@ end
 -- for AuxPerCycle picks in the crowded generic aux pool (which also holds every faction's
 -- MG/AT/sniper/flame variants -- ger alone has 7 duplicate MG entries in there). Attaches to
 -- a group as an escort (aux member, does not fill the combat cap), same as the AT rifle.
-local SupportVehicleIntervalSec = 120  -- seconds between support-vehicle keep-alive checks
+local SupportVehicleIntervalSec = 140  -- seconds between support-vehicle keep-alive checks
 local SupportVehicleCap    = 1       -- max live support vehicles kept
 
 local PAUSE_CLAMP = 2  -- seconds; an inter-quant os.time gap larger than this is a pause/hitch, skipped
@@ -590,21 +615,92 @@ function GetMortarUnit()
 	return GetRandomItem(mortars, function(t) return t.priority end)
 end
 
--- Dev-time self-check: a faction's artillery/mortar floor must never exceed that category's
--- cap (ArtyCap/MortarCap) -- a floor above the cap could never be satisfied and would spin
--- TryCappedTrickle's floor-bypass forever. Not wired into OnGameStart (a shipped data mistake
--- should not crash the mod at match start); run from the test suite instead, same as
+-- Live tank destroyers we have fielded (the ATTank keep-alive cap).
+function LiveAtTankCount()
+	local n = 0
+	for squadId, entry in pairs(Context.FieldUnits) do
+		if entry.class == UnitClass.ATTank then n = n + 1 end
+	end
+	return n
+end
+
+-- A tank destroyer from the current faction roster, drawn by priority, or nil. Mirrors
+-- GetArtyUnit/GetMortarUnit: filters out subtypes not yet unlocked and any subtype already
+-- fielded live, so with AtTankCap > 1 the extra slot goes toward variety instead of a
+-- duplicate.
+function GetAtTankUnit()
+	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]
+	if not roster then return nil end
+	local elapsed = Elapsed()
+	local live = {}
+	for squadId, entry in pairs(Context.FieldUnits) do
+		if entry.class == UnitClass.ATTank then live[entry.unit] = true end
+	end
+	local attanks = {}
+	for i, t in pairs(roster) do
+		if t.class == UnitClass.ATTank
+		and (t.unlock == nil or elapsed >= t.unlock)
+		and not live[t.unit] then
+			table.insert(attanks, t)
+		end
+	end
+	if #attanks == 0 then return nil end
+	return GetRandomItem(attanks, function(t) return t.priority end)
+end
+
+-- Live snipers we have fielded (the sniper keep-alive cap).
+function LiveSniperCount()
+	local n = 0
+	for squadId, entry in pairs(Context.FieldUnits) do
+		if entry.class == UnitClass.Sniper then n = n + 1 end
+	end
+	return n
+end
+
+-- A sniper from the current faction roster, drawn by priority, or nil. Mirrors
+-- GetArtyUnit/GetMortarUnit/GetAtTankUnit: filters out subtypes not yet unlocked and any
+-- subtype already fielded live, so with SniperCap > 1 the extra slot goes toward variety
+-- instead of a duplicate.
+function GetSniperUnit()
+	local roster = Purchases[1] and Purchases[1].Units[BotApi.Instance.army]
+	if not roster then return nil end
+	local elapsed = Elapsed()
+	local live = {}
+	for squadId, entry in pairs(Context.FieldUnits) do
+		if entry.class == UnitClass.Sniper then live[entry.unit] = true end
+	end
+	local snipers = {}
+	for i, t in pairs(roster) do
+		if t.class == UnitClass.Sniper
+		and (t.unlock == nil or elapsed >= t.unlock)
+		and not live[t.unit] then
+			table.insert(snipers, t)
+		end
+	end
+	if #snipers == 0 then return nil end
+	return GetRandomItem(snipers, function(t) return t.priority end)
+end
+
+-- Dev-time self-check: a faction's artillery/mortar/attank/sniper floor must never exceed
+-- that category's cap (ArtyCap/MortarCap/AtTankCap/SniperCap) -- a floor above the cap could
+-- never be satisfied and would spin TryCappedTrickle's floor-bypass forever. Not wired into
+-- OnGameStart (a shipped data mistake should not crash the mod at match start); run from the
+-- test suite instead, same as
 -- tools/check_unit_roster.py's roster-correctness checks. Pure. Returns a list of violation
--- strings; empty means every faction's data is consistent.
+-- strings; empty means every faction's data is consistent. FactionBias[army] is keyed by
+-- phase name first ({early={cat=N,...}, mid={...}, late={...}}); every phase's every
+-- category is checked.
 function ValidateFactionBias()
 	local violations = {}
-	local caps = { artillery = ArtyCap, mortar = MortarCap }
+	local caps = { artillery = ArtyCap, mortar = MortarCap, attank = AtTankCap, mg = DefenderCap, sniper = SniperCap }
 	for army, bias in pairs(FactionBias or {}) do
-		for cat, cap in pairs(caps) do
-			local floor = bias[cat]
-			if floor and floor > cap then
-				table.insert(violations, army .. "." .. cat .. ": floor " .. tostring(floor)
-					.. " exceeds cap " .. tostring(cap))
+		for phaseName, phaseBias in pairs(bias) do
+			for cat, floor in pairs(phaseBias) do
+				local cap = caps[cat]
+				if cap and floor > cap then
+					table.insert(violations, army .. "." .. phaseName .. "." .. cat .. ": floor "
+						.. tostring(floor) .. " exceeds cap " .. tostring(cap))
+				end
 			end
 		end
 	end
@@ -742,7 +838,6 @@ end
 -- PendingSpawnTimeoutQuants is a safety net in case the engine drops a confirmation outright
 -- (rare) -- without it, one lost event would permanently wedge all future spawning.
 function SpawnSlotFree()
-	if Elapsed() < (Context.SpawnPauseUntil or 0) then return false end
 	if Context.PendingSpawn ~= nil then
 		if Context.MatchQuants - Context.PendingSpawnQuant > PendingSpawnTimeoutQuants then
 			local lost = Context.PendingSpawn
@@ -1105,15 +1200,43 @@ function LosingBudgetMult()
 	return math.min(1.0 + 0.25 * deficit, 2.5)
 end
 
+-- (our share - enemy share) of all flags, in [-1,1] naturally (0 with no flags; positive =
+-- we're ahead, negative = we're behind). Clamped to [-1.5,1.5] as a safety margin -- the
+-- natural range cannot exceed +-1, but WaveIntervalNow's formula is defined over the wider
+-- clamp band so a transient counting edge case (e.g. a flag briefly counted in both/neither
+-- bucket) cannot silently exceed the intended +-150% swing.
+function FlagWinPct()
+	local captured, enemy, total = 0, 0, 0
+	for i, flag in pairs(BotApi.Scene.Flags) do
+		total = total + 1
+		if IsCapturedFlag(flag) then captured = captured + 1 end
+		if IsEnemyFlag(flag)    then enemy = enemy + 1 end
+	end
+	if total == 0 then return 0 end
+	local pct = (captured - enemy) / total
+	return math.max(-1.5, math.min(1.5, pct))
+end
+
+-- Current global interval multiplier: 1.0 normally, HeavyFailSlowdownMult (2.0, a -100% rate
+-- change) while the late-phase heavy-fail slowdown window (Context.SpawnSlowdownUntil, see
+-- HeavyFailStreakLimit) is active. Every interval-gated spawn cadence in this file multiplies
+-- its base interval by this so the whole spawn economy slows down together, not just heavies.
+function IntervalMult()
+	if Elapsed() < (Context.SpawnSlowdownUntil or 0) then return HeavyFailSlowdownMult end
+	return 1.0
+end
+
 -- Wave cadence: base gap scales up by the phase's waveMult (later phases wait longer so MP
--- banks for pricier units). The further behind on flags, the shorter the gap (each flag
--- deficit speeds it up), down to MinWaveInterval. Even/ahead -> full phase-scaled gap.
+-- banks for pricier units), then symmetrically adjusted by FlagWinPct -- winning slows the
+-- cadence down (longer gap, bank MP for a stronger follow-up) and losing speeds it up
+-- (shorter gap, keep pressure on), swinging the base gap by up to +-150% -- and finally by
+-- IntervalMult (heavy-fail slowdown). Floored at MinWaveIntervalSec so a bad enough deficit
+-- still can't spawn waves faster than that.
 function WaveIntervalNow()
 	local phase = CurrentPhase(Elapsed())
 	local base = WaveIntervalSec * (phase.waveMult or 1.0)
-	local deficit = FlagDeficit()
-	if deficit <= 0 then return base end
-	return math.max(MinWaveIntervalSec, math.floor(base / (1.0 + 0.25 * deficit)))
+	local winPct = FlagWinPct()
+	return math.max(MinWaveIntervalSec, math.floor(base * (1.0 + winPct) * IntervalMult()))
 end
 
 -- Live-squad ceiling for the current phase (grows +2 per phase). Falls back to the
@@ -1123,10 +1246,12 @@ function CurrentSquadCap()
 	return phase.squadCap or MaxLiveSquads
 end
 
--- A1 filter: which aux units may spawn right now.
+-- A1 filter: which aux units may spawn right now. ATTank is not in this pool (own dedicated
+-- trickle, see TryCappedTrickle/collectAux exclusion) -- its enemyHasTanks gate lives at the
+-- ATTANK call site instead.
 function AuxEligible(t, enemyHasTanks)
 	local c = t.class
-	if c == UnitClass.ATInfantry or c == UnitClass.ATTank then
+	if c == UnitClass.ATInfantry then
 		return enemyHasTanks            -- AT only matters against enemy armor
 	elseif c == UnitClass.MG then
 		return not IsLosing()           -- MG holds ground; skip when retaking flags
@@ -1164,22 +1289,35 @@ function CurrentPhase(elapsedSec)
 	return phases[#phases]
 end
 
+-- Resolves a FactionBias[army] entry to a floor number for the given category and phase
+-- name. FactionBias[army] is keyed by phase name first ({early={cat=N,...}, mid={...},
+-- late={...}}), so a faction can bias a different category per phase (not just a different
+-- magnitude of the same category) -- e.g. a mechanized-infantry doctrine that gains an
+-- armor floor only once it reaches its late-war phase. Missing phase or missing category
+-- both default to 0. Pure.
+function BiasFloor(bias, cat, phaseName)
+	if not bias then return 0 end
+	local phaseBias = bias[phaseName]
+	if not phaseBias then return 0 end
+	return phaseBias[cat] or 0
+end
+
 -- Choose the tier whose share is furthest below its target, among phase-allowed tiers
 -- that actually have a spawnable candidate. enemyHasTanks adds a small armor lean.
 -- losing bumps the smg weight to 2. `bias` (optional, a FactionBias[army]-shaped table) is
 -- checked FIRST, restricted to tierEligible: a tier whose live count is below its floor wins
 -- immediately, skipping the weight/deficit math (and the enemyHasTanks/losing adjustments)
--- below. The tierEligible restriction is load-bearing: it keeps the floor from ever forcing
--- a tier that hasn't unlocked yet for this phase/faction, which would otherwise starve every
--- other tier for the rest of the phase (same failure shape as the pre-fix PruneGroups
--- group-starvation bug from the spawn-reliability work). Pure: all inputs passed in, no
--- BotApi/Context reads.
+-- below. Floor values may vary by phase (see BiasFloor). The tierEligible restriction is
+-- load-bearing: it keeps the floor from ever forcing a tier that hasn't unlocked yet for
+-- this phase/faction, which would otherwise starve every other tier for the rest of the
+-- phase (same failure shape as the pre-fix PruneGroups group-starvation bug from the
+-- spawn-reliability work). Pure: all inputs passed in, no BotApi/Context reads.
 function DecideTier(phase, field, enemyHasTanks, tierEligible, losing, bias)
 	if bias then
 		local order = { "heavy", "medium", "light", "rifle", "smg" }
 		for i = 1, #order do
 			local tier = order[i]
-			if tierEligible[tier] and (field[tier] or 0) < (bias[tier] or 0) then
+			if tierEligible[tier] and (field[tier] or 0) < BiasFloor(bias, tier, phase.name) then
 				return tier
 			end
 		end
@@ -1280,6 +1418,8 @@ function GetUnitToSpawn(units)
 				and t.class ~= UnitClass.ArtilleryTank   -- SPGs disabled (poor bot AI use)
 				and t.class ~= UnitClass.Officer         -- officers are parked by their own trickle
 				and t.class ~= UnitClass.Mortar          -- mortars: own dedicated trickle (see TryCappedTrickle)
+			and t.class ~= UnitClass.ATTank          -- tank destroyers: own dedicated trickle (see TryCappedTrickle)
+			and t.class ~= UnitClass.Sniper          -- snipers: own dedicated trickle (see TryCappedTrickle)
 				and not (t.class == UnitClass.Vehicle and t.support) then -- support vehicles: own keep-alive trickle
 					table.insert(out, t)
 				end
@@ -1302,7 +1442,6 @@ function GetUnitToSpawn(units)
 		local mul = 1.0
 		if enemyHasTanks then
 			if t.class == UnitClass.HeavyTank then mul = mul * 1.5
-			elseif t.class == UnitClass.ATTank then mul = mul * 1.5
 			elseif t.class == UnitClass.ATInfantry then mul = mul * 1.5 end
 		end
 		-- From mid phase on, tanks dominate the field and infantry mostly rides escort --
@@ -1704,12 +1843,14 @@ function OnGameStart()
 	Context.WaveCooldown = 0
 	Context.ConsecutiveHeavyFails = 0
 	Context.HeavyFailStreak = {}
-	Context.SpawnPauseUntil = 0
+	Context.SpawnSlowdownUntil = 0
 	Context.LastNeutralTime = 0
 	Context.LastBackfillTime = 0
 	Context.LastDefenderTime = 0
 	Context.LastArtyTime = 0
 	Context.LastMortarTime = 0
+	Context.LastAtTankTime = 0
+	Context.LastSniperTime = 0
 	Context.LastDeepStrikeTime = 0
 	Context.AirborneSquads = {}
 	Context.LastOfficerTime = 0
@@ -1812,10 +1953,10 @@ function AttemptSpawn(tag)
 			for _ in pairs(Context.HeavyFailStreak) do distinct = distinct + 1 end
 			Context.ConsecutiveHeavyFails = (Context.ConsecutiveHeavyFails or 0) + 1
 			if distinct >= HeavyFailStreakLimit or Context.ConsecutiveHeavyFails >= HeavyFailStreakLimit * 3 then
-				Context.SpawnPauseUntil = Elapsed() + SpawnPauseSec
+				Context.SpawnSlowdownUntil = Elapsed() + SpawnSlowdownSec
 				Context.HeavyFailStreak = {}
 				Context.ConsecutiveHeavyFails = 0
-				print("[AISPAWN] SPAWNPAUSE heavy-fail-streak until=" .. tostring(Context.SpawnPauseUntil))
+				print("[AISPAWN] SPAWNSLOWDOWN heavy-fail-streak until=" .. tostring(Context.SpawnSlowdownUntil))
 			end
 		end
 	end
@@ -1868,7 +2009,7 @@ end
 -- so OnGameSpawn tags it for the deep-strike router instead of a group. Mirrors the MG/arty
 -- trickle shape; runs as an independent trickle because its trigger differs from theirs.
 function DeepStrikeTrickle()
-	if Elapsed() - Context.LastDeepStrikeTime < DeepStrikeIntervalSec then return end
+	if Elapsed() - Context.LastDeepStrikeTime < DeepStrikeIntervalSec * IntervalMult() then return end
 	local phaseName = CurrentPhase(Elapsed()).name
 	if phaseName ~= "mid" and phaseName ~= "late" then return end
 	if EnemyFlagPct() <= DeepStrikePct and not IsLosing() then return end
@@ -1894,11 +2035,12 @@ end
 -- that floor, so a faction's guaranteed minimum is reached faster than the normal keep-alive
 -- cadence would allow. Returns true if it attempted a spawn this tick (regardless of whether
 -- the attempt itself succeeded), so a caller's if/elseif chain treats this the same as any
--- other trickle branch (at most one attempt per tick). Used by the ARTY and MORTAR trickles.
+-- other trickle branch (at most one attempt per tick). Used by the ARTY, MORTAR, ATTANK, and
+-- SNIPER trickles.
 function TryCappedTrickle(cfg)
 	local live = cfg.liveCountFn()
 	local floorUnmet = live < (cfg.floorValue or 0)
-	local intervalOk = Elapsed() - Context[cfg.lastTimeField] >= cfg.interval
+	local intervalOk = Elapsed() - Context[cfg.lastTimeField] >= cfg.interval * IntervalMult()
 	if not (floorUnmet or intervalOk) then return false end
 	if live >= cfg.cap then return false end
 	if cfg.phaseGate and not cfg.phaseGate() then return false end
@@ -1930,8 +2072,8 @@ function OnGameQuant()
 	-- Refresh group targets each quant (re-pick if gone or nil).
 	UpdateGroupTargets()
 
-	-- Start a wave every WaveIntervalNow() quants (shorter when losing; only when
-	-- no wave is in progress).
+	-- Start a wave every WaveIntervalNow() quants (shorter when losing on flags, longer when
+	-- winning; only when no wave is in progress).
 	if Elapsed() - Context.LastWaveTime >= WaveIntervalNow() and Context.WaveRemaining == 0 then
 		Context.LastWaveTime = Elapsed()
 		local phase = CurrentPhase(Elapsed())
@@ -1999,8 +2141,10 @@ function OnGameQuant()
 	else
 		-- Idle between waves. Two trickles share this window; at most one spawns per
 		-- tick (the engine accepts ~1 spawn/quant). The rarer MG defender takes
-		-- priority, then the combat backfill toward the deficit tier.
-		if Elapsed() - Context.LastDefenderTime >= DefenderIntervalSec
+		-- priority, then the combat backfill toward the deficit tier. FactionBias mg floor
+		-- bypasses the interval cooldown when unmet, same shape as ARTY/MORTAR/ATTANK.
+		local mgFloorUnmet = LiveMGCount() < BiasFloor(FactionBias[BotApi.Instance.army], "mg", CurrentPhase(Elapsed()).name)
+		if (mgFloorUnmet or Elapsed() - Context.LastDefenderTime >= DefenderIntervalSec * IntervalMult())
 		and HeldFlagCount() > 0 and LiveMGCount() < DefenderCap and SpawnSlotFree() then
 			Context.LastDefenderTime = Elapsed()
 			local mg = GetMGUnit()
@@ -2019,15 +2163,26 @@ function OnGameQuant()
 			lastTimeField = "LastArtyTime", interval = ArtyIntervalSec, cap = ArtyCap,
 			liveCountFn = LiveArtyCount, unitPickerFn = GetArtyUnit, label = "ARTY",
 			phaseGate = function() return CurrentPhase(Elapsed()).name ~= "early" end,
-			floorValue = FactionBias[BotApi.Instance.army] and FactionBias[BotApi.Instance.army].artillery,
+			floorValue = BiasFloor(FactionBias[BotApi.Instance.army], "artillery", CurrentPhase(Elapsed()).name),
 		}) then
 		elseif TryCappedTrickle({
 			lastTimeField = "LastMortarTime", interval = MortarIntervalSec, cap = MortarCap,
 			liveCountFn = LiveMortarCount, unitPickerFn = GetMortarUnit, label = "MORTAR",
-			floorValue = FactionBias[BotApi.Instance.army] and FactionBias[BotApi.Instance.army].mortar,
+			floorValue = BiasFloor(FactionBias[BotApi.Instance.army], "mortar", CurrentPhase(Elapsed()).name),
+		}) then
+		elseif TryCappedTrickle({
+			lastTimeField = "LastAtTankTime", interval = AtTankIntervalSec, cap = AtTankCap,
+			liveCountFn = LiveAtTankCount, unitPickerFn = GetAtTankUnit, label = "ATTANK",
+			phaseGate = function() return BotApi.Commands:EnemyHasTanks() end,
+			floorValue = BiasFloor(FactionBias[BotApi.Instance.army], "attank", CurrentPhase(Elapsed()).name),
+		}) then
+		elseif TryCappedTrickle({
+			lastTimeField = "LastSniperTime", interval = SniperIntervalSec, cap = SniperCap,
+			liveCountFn = LiveSniperCount, unitPickerFn = GetSniperUnit, label = "SNIPER",
+			floorValue = BiasFloor(FactionBias[BotApi.Instance.army], "sniper", CurrentPhase(Elapsed()).name),
 		}) then
 		elseif Elapsed() - Context.LastWaveTime >= BackfillQuietSec
-		and Elapsed() - Context.LastBackfillTime >= BackfillIntervalSec and SpawnSlotFree() then
+		and Elapsed() - Context.LastBackfillTime >= BackfillIntervalSec * IntervalMult() and SpawnSlotFree() then
 			Context.LastBackfillTime = Elapsed()
 			Context.FillGroup = GroupToFill()
 			if Context.FillGroup ~= nil and OwnedSquadCount() < CurrentSquadCap() then
@@ -2037,7 +2192,7 @@ function OnGameQuant()
 	end
 
 	-- Neutral-flag capper trickle, independent of the wave cadence.
-	if Elapsed() - Context.LastNeutralTime >= NeutralIntervalSec and SpawnSlotFree() then
+	if Elapsed() - Context.LastNeutralTime >= NeutralIntervalSec * IntervalMult() and SpawnSlotFree() then
 		Context.LastNeutralTime = Elapsed()
 		if AnyCapperTarget() and LiveCapperCount() < CapperCap then
 			local line = GetCapperUnit()
@@ -2055,7 +2210,7 @@ function OnGameQuant()
 	-- Officer keep-alive trickle: after the unlock, maintain OfficerCap officers parked
 	-- at the spawn. They are spawned here (never via the ratio/aux pool) so OnGameSpawn
 	-- can withhold their capture order and leave them safe in the rear.
-	if Elapsed() - Context.LastOfficerTime >= OfficerIntervalSec and SpawnSlotFree() then
+	if Elapsed() - Context.LastOfficerTime >= OfficerIntervalSec * IntervalMult() and SpawnSlotFree() then
 		Context.LastOfficerTime = Elapsed()
 		if Elapsed() >= OfficerUnlock
 		and OfficerOnField() < OfficerCap then
@@ -2076,7 +2231,7 @@ function OnGameQuant()
 
 	-- AT-rifle keep-alive: from mid phase on, keep one AT rifle fielded as a GROUP member so it
 	-- moves with and escorts the platoon (anti half-track) instead of wandering alone.
-	if Elapsed() - Context.LastAtRifleTime >= AtRifleIntervalSec and SpawnSlotFree() then
+	if Elapsed() - Context.LastAtRifleTime >= AtRifleIntervalSec * IntervalMult() and SpawnSlotFree() then
 		Context.LastAtRifleTime = Elapsed()
 		if CurrentPhase(Elapsed()).name ~= "early"
 		and AtRifleOnField() < AtRifleCap
@@ -2115,7 +2270,7 @@ function OnGameQuant()
 	-- above which is fine escorting whichever group needs it -- these are meant as the main
 	-- push's direct-fire support, not a sub-prong add-on.
 	if Context.AssaultGunDesignated
-	and Elapsed() - Context.LastAssaultGunTime >= AssaultGunIntervalSec and SpawnSlotFree() then
+	and Elapsed() - Context.LastAssaultGunTime >= AssaultGunIntervalSec * IntervalMult() and SpawnSlotFree() then
 		Context.LastAssaultGunTime = Elapsed()
 		-- TEMP diagnostic (remove once the "2 live from one instance" report is confirmed or
 		-- ruled out): pid disambiguates this instance from a teammate's in a shared log, and
@@ -2153,7 +2308,7 @@ function OnGameQuant()
 	-- SupportVehicleIntervalSec comment) instead of leaving them to compete for AuxPerCycle
 	-- picks in the crowded generic aux pool. Same shape as the AT-rifle trickle above: attach
 	-- to a group as an escort, only spawn when a group exists to follow.
-	if Elapsed() - Context.LastSupportVehicleTime >= SupportVehicleIntervalSec and SpawnSlotFree() then
+	if Elapsed() - Context.LastSupportVehicleTime >= SupportVehicleIntervalSec * IntervalMult() and SpawnSlotFree() then
 		Context.LastSupportVehicleTime = Elapsed()
 		if LiveSupportVehicleCount() < SupportVehicleCap
 		and OwnedSquadCount() < CurrentSquadCap() then

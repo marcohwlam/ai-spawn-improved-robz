@@ -116,19 +116,76 @@ arbitrarily:
 | `eng` | Montgomery's "colossal cracks" — heavy artillery preparation before every advance | `artillery = 1` |
 
 ```lua
--- Per-faction minimum-count floor. Categories omitted default to 0 (no floor).
--- Categories: heavy | medium | light | rifle | smg | artillery | mortar
+-- FactionBias[army] is keyed by phase name first ({early={cat=N,...}, mid={...}, late={...}}),
+-- so a faction can bias a *different* category per phase, not just a bigger floor on the same
+-- one. A phase with no entry floors every category 0 (no-op).
+-- Categories: heavy | medium | light | rifle | smg | artillery | mortar | attank | mg | sniper
 FactionBias = {
-    ger       = { medium = 1 },      -- Blitzkrieg armor spearhead
-    ger_ss    = { light = 1 },       -- Panzergrenadier mechanized infantry
-    ger2      = { rifle = 1 },       -- Ostfront defensive infantry attrition
-    usa       = { artillery = 1 },   -- King of Battle
-    rus       = { smg = 1 },         -- PPSh assault infantry waves
-    rus_guard = { heavy = 1 },       -- Guards' first pick of heavy armor
-    jap       = { mortar = 1 },      -- Infiltration doctrine, light infantry weapons
-    eng       = { artillery = 1 },   -- Colossal cracks artillery preparation
+    -- Blitzkrieg armor spearhead: medium from mid, heavy (Tiger/Panther-class) takes over the
+    -- spearhead role late. MG42 teams anchoring the advance from the opening minutes.
+    ger = {
+        early = { mg = 1 },
+        mid   = { medium = 1 },
+        late  = { heavy = 1 },
+    },
+    -- Panzergrenadier mechanized infantry early; StuG/Hetzer/Jagdpanzer tank destroyers backing
+    -- the infantry from mid (SS Panzerjäger doctrine); late-war SS divisions traded that
+    -- mechanized mass for concentrated heavy armor (Tiger/King Tiger battalions).
+    ger_ss = {
+        early = { light = 1 },
+        mid   = { attank = 1 },
+        late  = { heavy = 1 },
+    },
+    -- Ostfront defensive infantry attrition early; reinforced with medium armor once it
+    -- unlocks at the mid boundary, then scarce heavy armor (Tiger II) piecemeal late.
+    ger2 = {
+        early = { rifle = 1 },
+        mid   = { medium = 1 },
+        late  = { heavy = 1 },
+    },
+    -- King of Battle: US mass/TOT artillery fire support, sustained from mid.
+    usa = {
+        mid  = { artillery = 1 },
+        late = { artillery = 1 },
+    },
+    -- PPSh assault infantry ("tommy gunner") waves throughout, backed by Soviet sniper
+    -- doctrine (Lyudmila Pavlichenko-style marksmanship training) from the opening minutes;
+    -- Deep Battle doctrine's massed T-34 armor sweeps join from mid, escalating late.
+    rus = {
+        early = { smg = 1, sniper = 1 },
+        mid   = { smg = 1, medium = 1 },
+        late  = { medium = 1, artillery = 1 },
+    },
+    -- Guards' elite marksmanship training from the opening minutes; by late-war T-34-85 mass
+    -- production also reaches Guards formations alongside their IS-series heavies.
+    rus_guard = {
+        early = { sniper = 1 },
+        mid   = { artillery = 1 },
+        late  = { heavy = 1 },
+    },
+    -- Infiltration/night-attack doctrine centered on light infantry weapons throughout;
+    -- Ho-Ni/Ha-To self-propelled artillery support joins from mid.
+    jap = {
+        early = { mortar = 1 },
+        mid   = { mortar = 1, artillery = 1 },
+        late  = { mortar = 1, artillery = 1 },
+    },
+    -- Montgomery's "colossal cracks" -- heavy artillery preparation, sustained from mid;
+    -- Churchill/Firefly heavy armor joins the set-piece assault late.
+    eng = {
+        mid  = { artillery = 1 },
+        late = { artillery = 1, heavy = 1 },
+    },
 }
 ```
+
+`BiasFloor(bias, cat, phaseName)` (`bot.lua`) resolves `bias[phaseName][cat]`, defaulting to
+0 when either the phase or the category is absent. `DecideTier`'s fixed tier-check order
+(`heavy, medium, light, rifle, smg`) means that when a phase floors more than one category
+(e.g. `ger.late`), the earlier tier in that order wins if both are simultaneously unmet --
+same fixed-order tie-break rule as before, now also disambiguating across categories a single
+phase entry introduces. `DecideTier` and the ARTY/MORTAR `TryCappedTrickle` call sites both
+resolve through `BiasFloor`, keyed off the caller's current phase name.
 
 ### 2. `DecideTier` (bot.lua, modify)
 
