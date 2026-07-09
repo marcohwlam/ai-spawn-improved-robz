@@ -344,11 +344,11 @@ Purchases = {
 				-- su122: closed-casemate 122mm howitzer on a T-34 hull, the direct Soviet
 				-- counterpart to StuH42 -- direct-fire infantry support, escorts the main
 				-- group rather than sitting backline (see the ger stuh42/brummbar comment).
-				-- su152/isu152 are left as backline artillery: closer to a tank-hunting
-				-- assault gun with longer engagement range than su122/StuH42.
+				-- su152/isu152: same assault-gun doctrine as su122/StuH42/Brummbär --
+				-- direct-fire close support, escorts the main group rather than backline.
 				{priority=0.8, class=UnitClass.ArtilleryTank, unit="su122", min_income=2.0, min_team=1, unlock=1120, arty="field", assault=true,},
-				{priority=0.5, class=UnitClass.ArtilleryTank, unit="su152", min_income=2.0, min_team=1, unlock=1120, arty="heavy",},
-				{priority=0.5, class=UnitClass.ArtilleryTank, unit="isu152", min_income=2.0, min_team=1, unlock=1120, arty="heavy",},
+				{priority=0.5, class=UnitClass.ArtilleryTank, unit="su152", min_income=2.0, min_team=1, unlock=1120, arty="heavy", assault=true,},
+				{priority=0.5, class=UnitClass.ArtilleryTank, unit="isu152", min_income=2.0, min_team=1, unlock=1120, arty="heavy", assault=true,},
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="bm13", min_income=2.0, min_team=1, unlock=1200, arty="rocket",},
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="bm_8_24", min_income=2.0, min_team=1, unlock=900, arty="rocket",},
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="bm8-48", min_income=2.0, min_team=1, unlock=900, arty="rocket",},
@@ -472,7 +472,7 @@ Purchases = {
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="bm13_guard", min_income=2.0, min_team=1, unlock=1200, arty="rocket",},
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="bm_8_24_guard", min_income=2.0, min_team=1, unlock=1200, arty="rocket",},
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="bm8-48_guard", min_income=2.0, min_team=1, unlock=900, arty="rocket",},
-				{priority=0.5, class=UnitClass.ArtilleryTank, unit="isu152_guard", min_income=2.0, min_team=1, unlock=1120, arty="heavy",},
+				{priority=0.5, class=UnitClass.ArtilleryTank, unit="isu152_guard", min_income=2.0, min_team=1, unlock=1120, arty="heavy", assault=true,},
 				{priority=0.3, class=UnitClass.ArtilleryTank, unit="np_bm31_guard", min_income=2.5, min_team=1, unlock=1200, arty="rocket",},
 				-- su122_guard: same rationale as the rus entry above -- escorts the main group.
 				{priority=0.8, class=UnitClass.ArtilleryTank, unit="su122_guard", min_income=2.0, min_team=1, unlock=1120, arty="field", assault=true,},
