@@ -1389,6 +1389,7 @@ function GetUnitToSpawn(units)
 		local affordable = teamSize >= (unit.min_team or 0)
 			and income >= (unit.min_income or -1)
 		local unlockOk = (unit.unlock == nil) or (elapsed >= unit.unlock)
+		local retireOk = (unit.retire == nil) or (elapsed < unit.retire)
 		local failed = Context.FailCooldown[unit.unit]
 		local notRecentlyFailed = (failed == nil)
 			or (Elapsed() - failed >= FailCooldownSec)
@@ -1399,7 +1400,7 @@ function GetUnitToSpawn(units)
 		local elitePhaseOk = (not unit.elite) or (phase.name == "early")
 		local eliteCapOk = not (g and unit.elite and GroupEliteCount(g) >= 1)
 		local eliteOk = elitePhaseOk and eliteCapOk
-		if affordable and unlockOk and notRecentlyFailed and phaseOk and eliteOk then
+		if affordable and unlockOk and retireOk and notRecentlyFailed and phaseOk and eliteOk then
 			table.insert(pool, unit)
 		end
 	end
