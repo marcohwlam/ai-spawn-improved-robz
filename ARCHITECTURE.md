@@ -108,9 +108,12 @@ bot below) and returns the first phase whose `upto` bound isn't passed yet.
 entry (anchored to that faction's real RobZ unlock times), so the global
 180s/480s bounds only apply as a fallback that never actually fires in play.
 `DecideTier` picks the tier (target heavy:medium:light:infantry ratio, gated by
-`tierEligible` and losing-state) → `GetUnitToSpawn` picks a specific live unit,
-skipping anything on recharge (`bot.data.lua` `;Nsec` cooldown) or
-`FailCooldown` (benched after an unaffordable spawn attempt).
+`tierEligible` and losing-state) → `GetUnitToSpawn` picks a specific live unit
+whose spawn window is open (`unlock` ≤ elapsed < `retire`), skipping anything on
+recharge (`bot.data.lua` `;Nsec` cooldown) or `FailCooldown` (benched after an
+unaffordable spawn attempt). The optional `retire` field drops a weak-gun
+`weight="medium"` tank once its gun can no longer penetrate the enemy armor on
+the field, so it stops diluting the medium-armor pick share late-game.
 
 Wave cadence: `WaveIntervalNow()` starts from `WaveIntervalSec = 110` seconds,
 multiplied by the phase's `waveMult` (early 1.0 / mid 1.5 / late 2.25), then

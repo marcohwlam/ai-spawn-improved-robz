@@ -22,6 +22,8 @@ flow, subsystem breakdown). Summary:
   mid=530s/late=1200s, ger mid=630s/late=1500s, jap mid=580s/late=1380s. The global
   `Phases` table (180/480) is only a fallback for a faction with no `FactionPhases`
   entry; every shipped faction has one, so 180/480 never actually applies in play.
+  Weak-gun medium tanks also carry a `retire` time so they leave the spawn pool
+  once a better-gunned successor unlocks, instead of dying uselessly late-game.
   Each phase sets the target composition, wave budget, and the heaviest armor tier
   allowed. Some factions (ger/ger_ss/ger2/jap) further override their late-phase
   target ratio (`lateTargets`) to match their doctrine or roster (e.g. jap has no

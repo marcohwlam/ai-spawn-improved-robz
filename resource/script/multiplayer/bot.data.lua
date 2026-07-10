@@ -137,6 +137,11 @@ FactionBias = {
 
 Purchases = {
 
+	-- Per-unit spawn-window fields: `unlock` = earliest elapsed seconds a unit may spawn;
+	-- `retire` = elapsed seconds at which a unit drops from the pool (obsolete gun). Both are
+	-- optional; omit for units that are eligible for the whole match. Only weight="medium"
+	-- weak-gun tanks carry `retire` -- they otherwise keep diluting the medium-armor pick
+	-- share long after their gun stops penetrating enemy armor.
 	{--single full roster, infinite (category-driven selection)
 		Repeat = 0,
 		Units = {
