@@ -178,6 +178,16 @@ flag until capped or lost — `CapperTarget`), airborne deep-strike (late-phase
 only, gated separately from the normal wave/tier system), and ratio backfill.
 Each has its own interval + cap constant near the top of `bot.lua`.
 
+`TryCappedTrickle` also takes optional `groupSlot`/`aux`: when set, the trickle
+skips (without stamping its interval) until `Context.Groups[groupSlot]`
+exists, then claims a `kind="group"` spawn slot instead of `kind="trickle"` so
+the unit lands via the group path in `OnGameSpawn` and rides along with that
+group's members. The ATTANK trickle uses `groupSlot=1, aux=true`, so tank
+destroyers escort the main group and follow its target rather than holding a
+rear flag as a defender; `ATTank` was removed from `DefenderClasses`
+accordingly (an orphaned TD, group not yet formed, now just waits instead of
+routing to a rear flag).
+
 ### 5. Offline data generation (`tools/`)
 Python scripts read RobZ's own `.set`/mission files and emit generated Lua
 tables — `flag_sectors.lua` (map flag coords/sectors/bases via

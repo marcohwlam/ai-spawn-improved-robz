@@ -264,9 +264,9 @@ local AuxPerCycle = 2
 -- Role assignment. Defender classes hold captured flags; everything else pushes
 -- enemy/neutral flags. BotApi has no "hold position" order, so "defend" means the
 -- squad is routed to an owned flag and the engine fights off attackers there.
-local DefenderClasses = {
+-- Global (not local) so the offline test suite can assert membership directly.
+DefenderClasses = {
 	[UnitClass.ATInfantry]    = true,  -- AT teams anchor the line
-	[UnitClass.ATTank]        = true,  -- tank destroyers overwatch
 	[UnitClass.AATank]        = true,  -- AA covers the rear
 	[UnitClass.ArtilleryTank] = true,  -- SPGs sit back
 	[UnitClass.Sniper]        = true,
@@ -2087,6 +2087,9 @@ function TryCappedTrickle(cfg)
 	if cfg.phaseGate and not cfg.phaseGate() then return false end
 	if HeldFlagCount() <= 0 then return false end
 	if not SpawnSlotFree() then return false end
+	-- An escort trickle rides a group and follows its target; if that group does not exist
+	-- yet, skip WITHOUT stamping lastTimeField so it fires promptly once the group forms.
+	if cfg.groupSlot and not Context.Groups[cfg.groupSlot] then return false end
 
 	Context[cfg.lastTimeField] = Elapsed()
 	local unit = cfg.unitPickerFn()
@@ -2095,7 +2098,11 @@ function TryCappedTrickle(cfg)
 	local ok = BotApi.Commands:Spawn(unit.unit, MaxSquadSize)
 	print("[AISPAWN] " .. cfg.label .. " try=" .. tostring(unit.unit) .. " ok=" .. tostring(ok))
 	if ok then
-		ClaimSpawnSlot({ kind = "trickle", info = unit })
+		if cfg.groupSlot then
+			ClaimSpawnSlot({ kind = "group", info = unit, slot = cfg.groupSlot, aux = cfg.aux == true })
+		else
+			ClaimSpawnSlot({ kind = "trickle", info = unit })
+		end
 	else
 		Context.FailCooldown[unit.unit] = Elapsed()
 	end
@@ -2216,6 +2223,7 @@ function OnGameQuant()
 			liveCountFn = LiveAtTankCount, unitPickerFn = GetAtTankUnit, label = "ATTANK",
 			phaseGate = function() return BotApi.Commands:EnemyHasTanks() end,
 			floorValue = BiasFloor(FactionBias[BotApi.Instance.army], "attank", CurrentPhase(Elapsed()).name),
+			groupSlot = 1, aux = true,   -- escort the main group and follow its target
 		}) then
 		elseif TryCappedTrickle({
 			lastTimeField = "LastSniperTime", interval = SniperIntervalSec, cap = SniperCap,
