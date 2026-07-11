@@ -1,61 +1,62 @@
-RobZ AI Overhaul - Smarter Bots, Real Waves (RobZ 1.30.x)
+RobZ AI Overhaul (RobZ 1.30.x)
 
-Your RobZ bots just got a brain transplant.
+Replaces RobZ's stock bot spawn and targeting logic. If you've noticed the AI dumping its whole army at once, ignoring artillery, or leaving squads idle at base while the front collapses, this is a rewrite aimed at those specific problems.
 
-Tired of watching the AI dump its whole army in one suicidal blob, forget artillery exists, or leave three squads standing at base while the front line collapses. This mod rewrites the RobZ bot spawn and targeting logic from the ground up so it plays like an actual opponent, not a manpower faucet.
+WHAT IT DOES
 
-WHAT CHANGED
+Wave spawning
+Manpower is banked and released in waves instead of spent the instant it is earned. Spawns are spread across ticks so the engine does not reject a burst. The interval between waves and the per-wave budget both react to how the match is going: losing the flag count shortens the gap and raises the budget (up to 2.5x).
 
-Dynamic wave spawning
-No more manpower dumped the second it is earned. The bot banks up and deploys in coordinated waves, spread across ticks so the engine never rejects a burst, and the cadence reacts to the scoreboard. Falling behind on flags shortens the gap between waves and swells the budget (up to 2.5x), so the bot throws more at the fight the worse it is losing.
+Group targeting
+Groups push toward the frontier instead of routing past your lines to a deep, unsupported flag. There is a short grace period after capturing a flag before the bot will abandon it again.
 
-Smarter targeting
-Groups push the frontier instead of leapfrogging past your lines into a deep, unsupported flag. A capture-settle grace period means the bot will not abandon a flag it just took the second the enemy shows up nearby.
+Phase-based composition
+Infantry and light armor early, mediums by mid-game, heavies late, timed against each faction's actual RobZ unlock schedule rather than a flat clock.
 
-Phase-aware composition
-Early game is infantry and light armor. Mid game brings mediums. Late game the heavies roll out, all timed to real per-faction RobZ unlock schedules, not a generic guess.
+Faction bias
+Each faction keeps a guaranteed minimum of its signature unit category on the field (German medium armor, US/British artillery, Soviet SMG infantry, Japanese mortars, and so on), on top of the normal composition ratio.
 
-Faction-flavored doctrine
-Each faction now leans into its real WWII playbook: German armor spearheads, US artillery barrages, Soviet SMG assault waves, Japanese infiltration mortars. A guaranteed minimum for that faction's signature category is layered on top of the normal composition, not a random reshuffle.
+Support unit trickles
+Assault guns and tank destroyers escort the main push and follow its target instead of parking at a backline flag. Halftracks, scout cars, mortars, AT guns, and snipers each get a dedicated keep-alive slot instead of competing in one shared pool where a few unit types crowd everyone else out.
 
-Support units that actually show up
-Assault guns escort the main push instead of sulking at a backline artillery flag. Gun-halftracks and scout cars get their own guaranteed keep-alive slot instead of losing every draw to seven duplicate MG entries.
+Late-game manpower guard
+If a heavy tank repeatedly fails to spawn for lack of manpower, spawn cadence slows down so manpower can accumulate, rather than continuing to burn it on cheaper units while the heavy never lands.
 
-Money-smart late game
-If a heavy tank keeps failing to spawn because the bot cannot afford it, spawning pauses so manpower can actually bank up, instead of burning it all on filler while the heavy never lands.
-
-Every trickle, tuned
-Point-defense MGs, AT rifles, cappers, officers, deep-strike airborne, each runs its own capped, independent trickle instead of starving each other for a shared pool.
-
-Crash-safe unit cap
-The MoWAS2 engine is 32-bit. Flood the field with enough squads across a big team game and it will OOM crash. Each bot enforces a hard live-squad ceiling tuned to stay well under that limit, so a 2v2 or 3v3 match with AI on every side will not tip the game over.
+Unit cap
+MoWAS2's engine is 32-bit and will OOM crash if the field gets flooded with squads in a large team game. Each bot enforces a live-squad ceiling to stay under that limit, so 2v2/3v3 with AI on every side stays stable.
 
 COMPATIBILITY
 
-- Lua-only, zero entity assets, will not conflict with content mods.
-- Requires RobZ Realism Mod 1.30.10 (do not use older RobZ versions). Load this mod after RobZ so its bot overrides win.
+- Lua only, no entity assets. Safe alongside content mods.
+- Requires RobZ Realism Mod 1.30.10 (older RobZ versions not supported). Load this mod after RobZ so its bot overrides take effect.
 - Game version 3.262.
-- RobZ maps and units only. The engine bot API exposes flags and unit rosters, not a generic map format. Targeting runs on precalculated flag-sector data for the RobZ map pool (54 of 57 1v1/2v2/3v3 maps) plus this mod roster and unlock data for RobZ factions. A map outside that precalculated set falls back to degraded targeting. Other mods or vanilla maps are not supported.
+- RobZ maps and units only. Targeting relies on precalculated flag-sector data for RobZ's map pool (54 of 57 1v1/2v2/3v3 maps) and this mod's own unit roster and unlock data. Maps outside that set fall back to degraded targeting. Not tested with vanilla maps or other mods.
 
-WHY TRUST IT
+TESTING
 
-Every fix ships with an offline test suite and gets cross-checked against RobZ own unit data before release. This is not guesswork, it is an AI that has actually been debugged.
+Changes are covered by an offline test suite and unit IDs are checked against RobZ's actual game data before release.
 
 SOURCE
 
-Open source on GitHub: https://github.com/marcohwlam/ai-spawn-improved-robz
+GitHub: https://github.com/marcohwlam/ai-spawn-improved-robz
 
 CHANGE LOG
 
+v1.2.0
+- Tank destroyers now escort the main assault group and follow its target instead of overwatching a rear flag.
+- Obsolete tank destroyers (open-top or gun-superseded) retire from the spawn pool when their armored or better-gunned successor unlocks, extending the existing weak-gun medium-tank retirement.
+- Losing-side manpower discipline: when behind on flags the bot banks manpower for real armor instead of downgrading to cheap tanks that die, and cuts artillery upkeep.
+- Fixed 9 more ger_ss vehicle IDs (Panzer IV, Panther, Tiger, StuG III/IV and light vehicles) that silently failed to spawn, which had frozen the SS main assault group mid-match.
+
 v1.1.0
-- New: faction composition bias. Each faction guarantees a minimum field count for a signature category (German medium armor, US/British artillery, Soviet SMG assault infantry, Japanese mortars, and so on), layered on top of the existing composition ratio instead of replacing it.
+- Added faction composition bias: each faction guarantees a minimum field count for a signature unit category, layered on top of the existing composition ratio.
 - Fixed a spawn-confirmation desync that could misattribute one squad's confirmation to a different in-flight spawn and corrupt tier-ratio accounting.
-- Fixed a freshly-created group getting deleted instead of retried when its first fill attempt failed, which could strand the bot on capper trickle alone for up to about 90s at match start.
+- Fixed a freshly-created group being deleted instead of retried after a failed first fill, which could strand the bot on capper trickle alone for up to about 90s at match start.
 - Fixed a pending-spawn-count leak on lost spawn confirmations that could wedge a group's fill slot.
-- Corrected several ger_ss support-vehicle IDs that were silently failing to spawn (100% failure), added the missing SdKfz 251/10 support vehicle and LSSAH mechanized infantry entry.
-- Mortars now get their own dedicated keep-alive trickle instead of competing untracked in the shared support pool.
+- Corrected several ger_ss support-vehicle IDs that silently failed to spawn (100% failure), added the missing SdKfz 251/10 and LSSAH mechanized infantry entry.
+- Mortars now have their own dedicated keep-alive trickle instead of competing untracked in the shared support pool.
 
 v1.0.0
 - Initial release: phase-based wave spawning, frontier-first group targeting, dedicated keep-alive trickles for support units/assault guns/artillery, late-game heavy-tank affordability guard, crash-safe unit cap.
 
-Built on cbyyy2013 Better AI and frontlines AI concepts.
+Built on cbyyy2013's Better AI and frontlines AI concepts.
