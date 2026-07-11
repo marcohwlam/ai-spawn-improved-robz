@@ -49,8 +49,8 @@ fails `Commands:Spawn`, enter an armor-bank window instead of downgrading:
 
 - Set `Context.ArmorBankUntil = Elapsed() + ArmorBankSec`.
 - While the window is active, `GetUnitToSpawn` considers **only armor tiers**. If no armor
-  tier is affordable this tick, it returns `nil` (spawn nothing — a hard bank), rather than
-  substituting a cheaper tier or infantry.
+  tier is affordable this tick, it returns `nil` (spawn nothing), rather than substituting a
+  cheaper tier or infantry.
 - A `nil` return counts as a wave fail (`WaveFails`), so the wave ends after `MaxWaveFails`
   and the bot idles between waves; the engine MP balance recovers while idle. When the
   balance can cover the armor again, `Commands:Spawn` succeeds, the streak resets, and normal
@@ -59,6 +59,28 @@ fails `Commands:Spawn`, enter an armor-bank window instead of downgrading:
 This generalizes the existing late-phase `HeavyFailSlowdown` (heavy-only, late-only) to the
 whole armor tier (heavy + medium) in every phase, and it suppresses the tier downgrade
 rather than merely slowing cadence.
+
+### Scope: what the window suppresses, and what keeps running
+
+The single gate lives inside `GetUnitToSpawn`. Both the wave fill and the idle backfill draw
+their unit from `GetUnitToSpawn` (via `UpdateUnitToSpawn` -> `Context.SpawnInfo`), so one gate
+covers both. The between-wave trickles pick from their own dedicated pickers
+(`GetCapperUnit`, `GetMGUnit`, `GetAtTankUnit`, ...) and never touch `GetUnitToSpawn`, so they
+are unaffected.
+
+| Spawn source | Path | In bank window |
+|---|---|---|
+| WAVE ratio fill | GetUnitToSpawn | STOP (unless armor affordable) |
+| BACKFILL (idle combat replacement) | GetUnitToSpawn | STOP (unless armor affordable) |
+| CAPPER trickle | GetCapperUnit | KEEP -- captures flags, which raises the income rate (the real fix for income starvation) |
+| DEFENDER (MG) trickle | GetMGUnit | KEEP -- cheap, holds owned flags |
+| ATTANK trickle | GetAtTankUnit | KEEP -- cheap, counters the enemy armor that is winning |
+| ARTY trickle | GetArtyUnit | governed separately by Feature 2 |
+| SNIPER / MORTAR / OFFICER / DEEPSTRIKE | own pickers | KEEP (minor) |
+
+Keeping the cappers is the point: banking the MP-heavy ratio fill lets the balance recover
+while the cheap cappers keep taking flags and lifting the income rate, so the bot climbs out
+of the hole instead of freezing in it.
 
 ### Safety rule (deadlock avoidance)
 
@@ -140,6 +162,9 @@ Feature 1:
 - A successful armor spawn clears the streak / lets the window lapse.
 - Income-starved case: armor excluded by `min_income`, window never set, infantry/light
   still spawn per ratio (no freeze).
+- Scope: while the window is active, a `CAPPER` / `DEFENDER` / `ATTANK` trickle still
+  produces a unit (those pickers do not consult the window), while a `BACKFILL` through
+  `GetUnitToSpawn` returns nothing unless armor is affordable.
 
 Feature 2:
 - `ArtyCapNow()` returns 1 at deficit <= 2, 0 at deficit >= `BadlyLosingDeficit` (3).
