@@ -88,6 +88,9 @@ local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spen
 local HeavyFailStreakLimit = 3     -- consecutive failed late-phase heavy Spawn attempts => slow down
 local SpawnSlowdownSec     = 150   -- seconds every interval runs at HeavyFailSlowdownMult once tripped
 local HeavyFailSlowdownMult = 2.0  -- -100% rate change: every interval doubles during the window
+local ArmorBankSec = 90   -- seconds: after an affordable armor unit fails to spawn (MP balance
+                          -- drained), refuse to downgrade to a cheaper tier for this long so MP
+                          -- banks toward the armor. Self-ends the instant armor is affordable.
 
 -- Neutral-flag capper trickle: every NeutralInterval quants, if any flag is
 -- neutral, spawn one cheap single soldier ordered to grab a neutral flag.
@@ -145,7 +148,8 @@ ArtyIntervalSec  = 65      -- seconds between artillery trickle checks (rarer th
 -- the rest of the match -- e.g. ger_ss's sdkfz4_ss rocket halftrack (unlock=1200, lowest
 -- priority of the three) would essentially never get a turn. 2 gives a second subtype room
 -- to appear once its own unlock passes, without turning artillery into a real force pillar.
-ArtyCap          = 2       -- max live artillery pieces the bot keeps fielded
+ArtyCap          = 1       -- baseline max live artillery (see ArtyCapNow for the live value)
+BadlyLosingDeficit = 3     -- FlagDeficit at/above which artillery is dropped entirely
 -- Hand-carried mortar keep-alive, mirroring the artillery pattern above: its own cap+interval
 -- pair, independent of the generic aux batch (which would otherwise let it compete with
 -- AT/MG/sniper/officer/AA for a fixed AuxPerCycle=2 slot -- see the collectAux exclusion).
@@ -1181,6 +1185,17 @@ function FlagDeficit()
 	return enemy - captured
 end
 
+-- Live artillery cap right now. Artillery is MP-heavy rear support: drop it to 0 while badly
+-- losing (FlagDeficit >= BadlyLosingDeficit) so MP goes to the front line that retakes flags,
+-- and to 0 while the armor-bank window is active (banking must not bleed MP into the rear).
+-- Otherwise the baseline ArtyCap. The trickle's `live >= cap` check hard-gates on this, so a
+-- FactionBias artillery floor cannot bypass a 0 cap.
+function ArtyCapNow()
+	if Elapsed() < (Context.ArmorBankUntil or 0) then return 0 end
+	if FlagDeficit() >= BadlyLosingDeficit then return 0 end
+	return ArtyCap
+end
+
 -- Share of all flags currently held by the enemy, in [0,1]. 0 when there are no flags.
 function EnemyFlagPct()
 	local enemy, total = 0, 0
@@ -1449,6 +1464,21 @@ function GetUnitToSpawn(units)
 		-- lean the rifle/smg pick toward mech=true (mounted) squads over foot infantry.
 		if t.mech and phase.name ~= "early" then mul = mul * 1.8 end
 		return t.priority * mul
+	end
+
+	-- Armor-bank window: an affordable armor unit just failed to spawn (MP balance drained).
+	-- Refuse to downgrade to a cheaper tier -- spawn armor if any is affordable now, else
+	-- spawn nothing so MP accumulates for it. Wave + backfill both route through here, so
+	-- both stop; the capper/defender/attank trickles use their own pickers and keep running,
+	-- and the flag-capturing cappers keep lifting income while the balance recovers.
+	if elapsed < (Context.ArmorBankUntil or 0) then
+		if #byTier.heavy > 0 then
+			return GetRandomItem(byTier.heavy, weightOf)
+		elseif #byTier.medium > 0 then
+			return GetRandomItem(byTier.medium, weightOf)
+		else
+			return nil
+		end
 	end
 
 	-- Per-group armor lead, gated by the army-wide armor deficit. Front-loading leads
@@ -1845,6 +1875,7 @@ function OnGameStart()
 	Context.ConsecutiveHeavyFails = 0
 	Context.HeavyFailStreak = {}
 	Context.SpawnSlowdownUntil = 0
+	Context.ArmorBankUntil = 0
 	Context.LastNeutralTime = 0
 	Context.LastBackfillTime = 0
 	Context.LastDefenderTime = 0
@@ -1963,6 +1994,14 @@ function AttemptSpawn(tag)
 	end
 	if not ok then
 		Context.FailCooldown[unit.unit] = Elapsed()
+		-- An affordable armor unit (it passed min_income to be picked) failed to spawn =>
+		-- the MP balance is drained. Open the bank window so GetUnitToSpawn stops downgrading
+		-- to cheap tanks and banks toward this armor instead. Generalises the late-heavy
+		-- HeavyFailSlowdown to all armor, every phase.
+		local bankTier = TierOf(unit)
+		if bankTier == "heavy" or bankTier == "medium" then
+			Context.ArmorBankUntil = Elapsed() + ArmorBankSec
+		end
 	else
 		-- Advance the ratio/aux cycle on a successful spawn.
 		if TierOf(unit) == nil then
@@ -2161,7 +2200,7 @@ function OnGameQuant()
 				UpdateUnitToSpawn(Context.Purchase)
 			end
 		elseif TryCappedTrickle({
-			lastTimeField = "LastArtyTime", interval = ArtyIntervalSec, cap = ArtyCap,
+			lastTimeField = "LastArtyTime", interval = ArtyIntervalSec, cap = ArtyCapNow(),
 			liveCountFn = LiveArtyCount, unitPickerFn = GetArtyUnit, label = "ARTY",
 			phaseGate = function() return CurrentPhase(Elapsed()).name ~= "early" end,
 			floorValue = BiasFloor(FactionBias[BotApi.Instance.army], "artillery", CurrentPhase(Elapsed()).name),
