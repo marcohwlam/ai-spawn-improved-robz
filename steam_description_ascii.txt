@@ -16,6 +16,9 @@ Infantry and light armor early, mediums by mid-game, heavies late, timed against
 Faction bias
 Each faction keeps a guaranteed minimum of its signature unit category on the field (German medium armor, US/British artillery, Soviet SMG infantry, Japanese mortars, and so on), on top of the normal composition ratio.
 
+Best-gun selection
+When the enemy fields armor, the picker weights toward the highest armor-penetration unit unlocked in the chosen tier, so the main push carries a gun that can punch through instead of feeding out-gunned light vehicles into enemy tanks. Penetration values are extracted from RobZ's own gun data.
+
 Support unit trickles
 Assault guns and tank destroyers escort the main push and follow its target instead of parking at a backline flag. Halftracks, scout cars, mortars, AT guns, and snipers each get a dedicated keep-alive slot instead of competing in one shared pool where a few unit types crowd everyone else out.
 
@@ -47,6 +50,8 @@ v1.2.0
 - Obsolete tank destroyers (open-top or gun-superseded) retire from the spawn pool when their armored or better-gunned successor unlocks, extending the existing weak-gun medium-tank retirement.
 - Losing-side manpower discipline: when behind on flags the bot banks manpower for real armor instead of downgrading to cheap tanks that die, and cuts artillery upkeep.
 - Fixed 9 more ger_ss vehicle IDs (Panzer IV, Panther, Tiger, StuG III/IV and light vehicles) that silently failed to spawn, which had frozen the SS main assault group mid-match.
+- Best-gun selection: when the enemy fields tanks, the spawn picker weights toward the highest-penetration unit available in the current tier, drawn from RobZ's own gun-penetration data.
+- Added the SdKfz 234/2 Puma (5cm) to the German and Waffen-SS rosters to close the mid-game anti-armor gap before the Panzer III/IV 5cm unlocks.
 
 v1.1.0
 - Added faction composition bias: each faction guarantees a minimum field count for a signature unit category, layered on top of the existing composition ratio.
