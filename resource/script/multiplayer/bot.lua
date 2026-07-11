@@ -148,7 +148,8 @@ ArtyIntervalSec  = 65      -- seconds between artillery trickle checks (rarer th
 -- the rest of the match -- e.g. ger_ss's sdkfz4_ss rocket halftrack (unlock=1200, lowest
 -- priority of the three) would essentially never get a turn. 2 gives a second subtype room
 -- to appear once its own unlock passes, without turning artillery into a real force pillar.
-ArtyCap          = 2       -- max live artillery pieces the bot keeps fielded
+ArtyCap          = 1       -- baseline max live artillery (see ArtyCapNow for the live value)
+BadlyLosingDeficit = 3     -- FlagDeficit at/above which artillery is dropped entirely
 -- Hand-carried mortar keep-alive, mirroring the artillery pattern above: its own cap+interval
 -- pair, independent of the generic aux batch (which would otherwise let it compete with
 -- AT/MG/sniper/officer/AA for a fixed AuxPerCycle=2 slot -- see the collectAux exclusion).
@@ -1184,6 +1185,17 @@ function FlagDeficit()
 	return enemy - captured
 end
 
+-- Live artillery cap right now. Artillery is MP-heavy rear support: drop it to 0 while badly
+-- losing (FlagDeficit >= BadlyLosingDeficit) so MP goes to the front line that retakes flags,
+-- and to 0 while the armor-bank window is active (banking must not bleed MP into the rear).
+-- Otherwise the baseline ArtyCap. The trickle's `live >= cap` check hard-gates on this, so a
+-- FactionBias artillery floor cannot bypass a 0 cap.
+function ArtyCapNow()
+	if Elapsed() < (Context.ArmorBankUntil or 0) then return 0 end
+	if FlagDeficit() >= BadlyLosingDeficit then return 0 end
+	return ArtyCap
+end
+
 -- Share of all flags currently held by the enemy, in [0,1]. 0 when there are no flags.
 function EnemyFlagPct()
 	local enemy, total = 0, 0
@@ -2188,7 +2200,7 @@ function OnGameQuant()
 				UpdateUnitToSpawn(Context.Purchase)
 			end
 		elseif TryCappedTrickle({
-			lastTimeField = "LastArtyTime", interval = ArtyIntervalSec, cap = ArtyCap,
+			lastTimeField = "LastArtyTime", interval = ArtyIntervalSec, cap = ArtyCapNow(),
 			liveCountFn = LiveArtyCount, unitPickerFn = GetArtyUnit, label = "ARTY",
 			phaseGate = function() return CurrentPhase(Elapsed()).name ~= "early" end,
 			floorValue = BiasFloor(FactionBias[BotApi.Instance.army], "artillery", CurrentPhase(Elapsed()).name),
