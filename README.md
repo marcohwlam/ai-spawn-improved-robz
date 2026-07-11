@@ -40,6 +40,9 @@ flow, subsystem breakdown). Summary:
   additionally slows down every interval-gated spawn cadence (doubles it) for a while
   after repeated heavy-tank spawn failures, so manpower banks toward the heavy instead
   of draining into cheaper filler — without the field ever going fully empty.
+- **Gun-rating (AP)** — when the enemy fields tanks, the picker prefers the
+  highest armor-penetration unit within its chosen tier, from RobZ-extracted
+  penetration data (`gun_ratings.lua`). Bounded x0.5-x1.8, never bans a unit.
 - **Faction composition bias** *(see
   `docs/superpowers/specs/2026-07-06-faction-composition-bias-design.md`)* — a
   per-faction, per-phase minimum-count floor across 10 categories (the 5 tiers plus

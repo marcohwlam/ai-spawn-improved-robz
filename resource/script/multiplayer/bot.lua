@@ -1,5 +1,6 @@
 require([[/script/multiplayer/bot.data]])
 require([[/script/multiplayer/flag_sectors]])
+GunRating = require([[/script/multiplayer/gun_ratings]])
 
 -- Engine/API scope note: BotApi.Scene.Squads and BotApi.Scene.Flags are THIS bot's own view --
 -- Squads is every squad this player (bot) currently controls (not the whole match), and Flags
@@ -72,6 +73,24 @@ Context = {
 -- code outside it).
 WaveIntervalSec     = 110  -- seconds between wave starts
 MinWaveIntervalSec  = 35   -- floor: never faster than ~35s even when far behind
+
+-- Gun-rating (AP) boost: when the enemy fields armor, weightOf leans the within-tier
+-- pick toward the candidate with the highest penetration (GunRating, from gun_ratings.lua).
+-- Global (not local), same reason as WaveIntervalSec above: the offline test suite
+-- asserts GunRatingMul directly.
+GunRatingRef    = 60    -- mm; reference penetration (roughly a medium tank's flank)
+GunRatingMulMin = 0.5
+GunRatingMulMax = 1.8
+
+function GunRatingMul(unitId)
+	local r = GunRating and GunRating[unitId]
+	if not r or not BotApi.Commands:EnemyHasTanks() then return 1.0 end
+	local m = r / GunRatingRef
+	if m < GunRatingMulMin then m = GunRatingMulMin end
+	if m > GunRatingMulMax then m = GunRatingMulMax end
+	return m
+end
+
 local WaveSpawnSpacing = 7      -- quants between spawns inside a wave (~0.1s)
 local PendingSpawnTimeoutQuants = 20 -- give up on an unconfirmed spawn after this many quants
 local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spent, end wave
@@ -1464,6 +1483,7 @@ function GetUnitToSpawn(units)
 		-- From mid phase on, tanks dominate the field and infantry mostly rides escort --
 		-- lean the rifle/smg pick toward mech=true (mounted) squads over foot infantry.
 		if t.mech and phase.name ~= "early" then mul = mul * 1.8 end
+		mul = mul * GunRatingMul(t.unit)
 		return t.priority * mul
 	end
 

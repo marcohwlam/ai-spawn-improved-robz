@@ -10,6 +10,9 @@ require = function(mod)
 	if tostring(mod):find("flag_sectors") then
 		return dofile(MROOT .. "/flag_sectors.lua")
 	end
+	if tostring(mod):find("gun_ratings") then
+		return dofile(MROOT .. "/gun_ratings.lua")
+	end
 	return realRequire(mod)
 end
 

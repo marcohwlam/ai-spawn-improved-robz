@@ -233,6 +233,7 @@ Purchases = {
 				{priority=1.5, class=UnitClass.Tank,       unit="pz2l",               min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz222",            min_income=1.0, unlock=380,},
 				{priority=1.0, class=UnitClass.Tank,       unit="np_sdkfz234_1",       min_income=1.0, unlock=420,},
+				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz234",            min_income=1.0, unlock=530,},
 				{priority=1.0, class=UnitClass.Tank,       unit="pz3_m",               min_income=1.0, unlock=630, retire=950, weight="medium",},
 				{priority=1.5, class=UnitClass.AATank,     unit="welberwind",          min_income=1.5, unlock=420,},
 				{priority=2.0, class=UnitClass.Tank,          unit="pz4h_seq",             min_income=1.5, unlock=950, weight="medium",},
@@ -310,6 +311,7 @@ Purchases = {
 				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz250_9_ss", unlock=320, support=true,},
 				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz251_9_ss", unlock=370, support=true,},
 				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz234_3_ss", unlock=530, support=true,},
+				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz234_ss",         min_income=1.0, unlock=530,},
 				{priority=1.5, class=UnitClass.Tank,       unit="pz2l_ss",            min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz222_ss",         min_income=1.0, unlock=380,},
 				{priority=1.0, class=UnitClass.Tank,       unit="pz3_m_ss",            min_income=1.0, unlock=630, retire=830, weight="medium",},
@@ -493,6 +495,7 @@ Purchases = {
 				-- (unlock per the live mod's .set data).
 				{priority=2.5, class=UnitClass.Vehicle,    unit="sdkfz234_3", unlock=530, support=true,},
 				{priority=1.5, class=UnitClass.Tank,       unit="pz2l_ger2",          min_income=1.0, unlock=420,},
+				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz234_ger2",      min_income=1.0, unlock=530,},
 				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz234_1",         min_income=1.0, unlock=420, weight="light",},
 				{priority=1.0, class=UnitClass.Tank,       unit="pz3_ger2",           min_income=1.0, unlock=630, retire=830, weight="medium",},
 				{priority=1.5, class=UnitClass.AATank,     unit="ostwind_ger2",       min_income=1.5, unlock=560,},
