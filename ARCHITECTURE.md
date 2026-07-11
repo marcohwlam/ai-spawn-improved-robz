@@ -113,7 +113,11 @@ whose spawn window is open (`unlock` ≤ elapsed < `retire`), skipping anything 
 recharge (`bot.data.lua` `;Nsec` cooldown) or `FailCooldown` (benched after an
 unaffordable spawn attempt). The optional `retire` field drops a weak-gun
 `weight="medium"` tank once its gun can no longer penetrate the enemy armor on
-the field, so it stops diluting the medium-armor pick share late-game.
+the field, so it stops diluting the medium-armor pick share late-game. The same
+`retire` field also gates `GetAtTankUnit` (the ATTank trickle picker), retiring
+the open-top/gun-superseded tank destroyers (`marder_3m`, `marder_3m_ss`,
+`su76`, `su76_guard`, `m10wolverine_eng`) once their armored, better-gunned
+successor has unlocked.
 
 Wave cadence: `WaveIntervalNow()` starts from `WaveIntervalSec = 110` seconds,
 multiplied by the phase's `waveMult` (early 1.0 / mid 1.5 / late 2.25), then
@@ -173,6 +177,16 @@ assault-gun/support-vehicle keep-alive, neutral-flag cappers (commit to one
 flag until capped or lost — `CapperTarget`), airborne deep-strike (late-phase
 only, gated separately from the normal wave/tier system), and ratio backfill.
 Each has its own interval + cap constant near the top of `bot.lua`.
+
+`TryCappedTrickle` also takes optional `groupSlot`/`aux`: when set, the trickle
+skips (without stamping its interval) until `Context.Groups[groupSlot]`
+exists, then claims a `kind="group"` spawn slot instead of `kind="trickle"` so
+the unit lands via the group path in `OnGameSpawn` and rides along with that
+group's members. The ATTANK trickle uses `groupSlot=1, aux=true`, so tank
+destroyers escort the main group and follow its target rather than holding a
+rear flag as a defender; `ATTank` was removed from `DefenderClasses`
+accordingly (an orphaned TD, group not yet formed, now just waits instead of
+routing to a rear flag).
 
 ### 5. Offline data generation (`tools/`)
 Python scripts read RobZ's own `.set`/mission files and emit generated Lua
