@@ -47,7 +47,11 @@ unit, `byTier.heavy`/`byTier.medium` empties, `tierEligible` drops that tier, an
 When an armor-tier unit (`TierOf == "heavy"` or `"medium"`) that **passed `min_income`**
 fails `Commands:Spawn`, enter an armor-bank window instead of downgrading:
 
-- Set `Context.ArmorBankUntil = Elapsed() + ArmorBankSec`.
+- Set `Context.ArmorBankUntil = Elapsed() + ArmorBankSec`, where `ArmorBankSec = 90`
+  (named, tunable constant). 90s spans roughly one `BackfillIntervalSec` (50s) plus margin so
+  the balance accumulates a meaningful amount, rechecks affordability within a single wave
+  gap, and self-ends the instant armor becomes affordable (the window only blocks the
+  downgrade, not the armor spawn).
 - While the window is active, `GetUnitToSpawn` considers **only armor tiers**. If no armor
   tier is affordable this tick, it returns `nil` (spawn nothing), rather than substituting a
   cheaper tier or infantry.
@@ -75,8 +79,13 @@ are unaffected.
 | CAPPER trickle | GetCapperUnit | KEEP -- captures flags, which raises the income rate (the real fix for income starvation) |
 | DEFENDER (MG) trickle | GetMGUnit | KEEP -- cheap, holds owned flags |
 | ATTANK trickle | GetAtTankUnit | KEEP -- cheap, counters the enemy armor that is winning |
-| ARTY trickle | GetArtyUnit | governed separately by Feature 2 |
+| ARTY trickle | GetArtyUnit | STOP -- artillery is MP-heavy; banking for armor must not bleed MP into the rear. Suppressed by an extra window guard at the trickle (composes with Feature 2's cap). |
 | SNIPER / MORTAR / OFFICER / DEEPSTRIKE | own pickers | KEEP (minor) |
+
+ARTY does not flow through `GetUnitToSpawn`, so the single gate does not reach it. Add a
+window guard at the artillery trickle so it is skipped while `Elapsed() < Context.ArmorBankUntil`.
+This stacks with Feature 2: Feature 2 sets the standing cap by flag deficit, and the bank
+window additionally freezes artillery spawns during the recovery window.
 
 Keeping the cappers is the point: banking the MP-heavy ratio fill lets the balance recover
 while the cheap cappers keep taking flags and lifting the income rate, so the bot climbs out
@@ -165,6 +174,8 @@ Feature 1:
 - Scope: while the window is active, a `CAPPER` / `DEFENDER` / `ATTANK` trickle still
   produces a unit (those pickers do not consult the window), while a `BACKFILL` through
   `GetUnitToSpawn` returns nothing unless armor is affordable.
+- ARTY in-window: while `Context.ArmorBankUntil` is active, the artillery trickle is
+  skipped even when its cap/interval would otherwise permit a spawn.
 
 Feature 2:
 - `ArtyCapNow()` returns 1 at deficit <= 2, 0 at deficit >= `BadlyLosingDeficit` (3).
