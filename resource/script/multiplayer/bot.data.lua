@@ -137,6 +137,11 @@ FactionBias = {
 
 Purchases = {
 
+	-- Per-unit spawn-window fields: `unlock` = earliest elapsed seconds a unit may spawn;
+	-- `retire` = elapsed seconds at which a unit drops from the pool (obsolete gun). Both are
+	-- optional; omit for units that are eligible for the whole match. Only weight="medium"
+	-- weak-gun tanks carry `retire` -- they otherwise keep diluting the medium-armor pick
+	-- share long after their gun stops penetrating enemy armor.
 	{--single full roster, infinite (category-driven selection)
 		Repeat = 0,
 		Units = {
@@ -168,7 +173,7 @@ Purchases = {
 				{priority=1.0, class=UnitClass.Tank,       unit="humber",              min_income=1.0, unlock=300,},
 				{priority=1.0, class=UnitClass.Tank,       unit="staghound_seq",       min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.AATank,     unit="crusaderaa1",         min_income=1.5, unlock=520,},
-				{priority=2.0, class=UnitClass.Tank,          unit="cromwell_mk_iv_seq",   min_income=1.5, unlock=750, weight="medium",},
+				{priority=2.0, class=UnitClass.Tank,          unit="cromwell_mk_iv_seq",   min_income=1.5, unlock=750, retire=1130, weight="medium",},
 				{priority=1.5, class=UnitClass.Tank,          unit="mk3",                  min_income=1.5, unlock=480,},
 				{priority=1.5, class=UnitClass.Tank,          unit="cromwell_mk_vi",        min_income=1.5, unlock=750, weight="medium",},
 				{priority=1.5, class=UnitClass.Tank,          unit="m4a1_76w_eng",          min_income=1.5, unlock=1130, weight="medium",},
@@ -227,10 +232,10 @@ Purchases = {
 				{priority=1.5, class=UnitClass.Tank,       unit="pz2l",               min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz222",            min_income=1.0, unlock=380,},
 				{priority=1.0, class=UnitClass.Tank,       unit="np_sdkfz234_1",       min_income=1.0, unlock=420,},
-				{priority=1.0, class=UnitClass.Tank,       unit="pz3_m",               min_income=1.0, unlock=630, weight="medium",},
+				{priority=1.0, class=UnitClass.Tank,       unit="pz3_m",               min_income=1.0, unlock=630, retire=950, weight="medium",},
 				{priority=1.5, class=UnitClass.AATank,     unit="welberwind",          min_income=1.5, unlock=420,},
 				{priority=2.0, class=UnitClass.Tank,          unit="pz4h_seq",             min_income=1.5, unlock=950, weight="medium",},
-				{priority=1.5, class=UnitClass.Tank,          unit="pz3n",                 min_income=1.5, unlock=630, weight="medium",},
+				{priority=1.5, class=UnitClass.Tank,          unit="pz3n",                 min_income=1.5, unlock=630, retire=1300, weight="medium",},
 				{priority=1.5, class=UnitClass.HeavyTank,     unit="pz5g",                 min_income=2.0, min_team=1, unlock=1500,},
 				{priority=1.0, class=UnitClass.HeavyTank,     unit="pz6e",                 min_income=2.0, min_team=1, unlock=1750,},
 				{priority=0.5, class=UnitClass.HeavyTank,     unit="sdkfz182b",            min_income=2.5, min_team=2, unlock=2160,},
@@ -306,8 +311,8 @@ Purchases = {
 				{priority=2.5, class=UnitClass.Vehicle,    unit="np_sdkfz234_3", unlock=530, support=true,},
 				{priority=1.5, class=UnitClass.Tank,       unit="pz2l",               min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz222",            min_income=1.0, unlock=380,},
-				{priority=1.0, class=UnitClass.Tank,       unit="pz3_m_ss",            min_income=1.0, unlock=630, weight="medium",},
-				{priority=1.5, class=UnitClass.Tank,          unit="pz3n_ss",              min_income=1.5, unlock=630, weight="medium",},
+				{priority=1.0, class=UnitClass.Tank,       unit="pz3_m_ss",            min_income=1.0, unlock=630, retire=830, weight="medium",},
+				{priority=1.5, class=UnitClass.Tank,          unit="pz3n_ss",              min_income=1.5, unlock=630, retire=1300, weight="medium",},
 				{priority=2.0, class=UnitClass.Tank,          unit="pz4g",                 min_income=1.5, unlock=830, weight="medium",},
 				{priority=1.0, class=UnitClass.Tank,          unit="flammpz38",            min_income=1.5, unlock=900, weight="medium",},
 				{priority=1.5, class=UnitClass.HeavyTank,     unit="pz5a",                 min_income=2.0, min_team=1, unlock=1500,},
@@ -362,7 +367,7 @@ Purchases = {
 				{priority=1.0, class=UnitClass.Tank,       unit="m8",                  min_income=1.0, unlock=530, weight="medium",},
 				{priority=1.0, class=UnitClass.Tank,       unit="m24",                 min_income=1.0, unlock=620,},
 				{priority=1.5, class=UnitClass.AATank,     unit="m16",                 min_income=1.5, unlock=360,},
-				{priority=2.0, class=UnitClass.Tank,          unit="m4a3_75_seq",          min_income=1.5, unlock=750, weight="medium",},
+				{priority=2.0, class=UnitClass.Tank,          unit="m4a3_75_seq",          min_income=1.5, unlock=750, retire=1120, weight="medium",},
 				{priority=2.0, class=UnitClass.Tank,          unit="m4a3e8_seq",           min_income=1.5, unlock=1120, weight="medium",},
 				{priority=1.5, class=UnitClass.Tank,          unit="m4a3_105",             min_income=1.5, unlock=950, weight="medium",},
 				{priority=1.5, class=UnitClass.HeavyTank,     unit="m4a3e2_jumbo",        min_income=2.0, min_team=1, unlock=1200,},
@@ -397,7 +402,7 @@ Purchases = {
 				{priority=1.5, class=UnitClass.Tank,       unit="t60",                 min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="t70",                 min_income=1.0, unlock=440,},
 				{priority=1.0, class=UnitClass.Tank,       unit="bt5",                 min_income=1.0, unlock=440,},
-				{priority=2.0, class=UnitClass.Tank,          unit="t34_2_seq",            min_income=1.5, unlock=750, weight="medium",},
+				{priority=2.0, class=UnitClass.Tank,          unit="t34_2_seq",            min_income=1.5, unlock=750, retire=1170, weight="medium",},
 				{priority=2.0, class=UnitClass.Tank,          unit="t34_3_seq",            min_income=1.5, unlock=1170, weight="medium",},
 				{priority=1.5, class=UnitClass.Tank,          unit="kv1",                  min_income=1.5, unlock=750, weight="heavy",},
 				{priority=1.5, class=UnitClass.HeavyTank,     unit="kv2",                  min_income=1.5, min_team=1, unlock=830,},
@@ -488,9 +493,9 @@ Purchases = {
 				{priority=2.5, class=UnitClass.Vehicle,    unit="sdkfz234_3", unlock=530, support=true,},
 				{priority=1.5, class=UnitClass.Tank,       unit="pz2l_ger2",          min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz234_1",         min_income=1.0, unlock=420, weight="light",},
-				{priority=1.0, class=UnitClass.Tank,       unit="pz3_ger2",           min_income=1.0, unlock=630, weight="medium",},
+				{priority=1.0, class=UnitClass.Tank,       unit="pz3_ger2",           min_income=1.0, unlock=630, retire=830, weight="medium",},
 				{priority=1.5, class=UnitClass.AATank,     unit="ostwind_ger2",       min_income=1.5, unlock=560,},
-				{priority=2.0, class=UnitClass.Tank,          unit="t34_2_ger",           min_income=1.5, unlock=750, weight="medium",},
+				{priority=2.0, class=UnitClass.Tank,          unit="t34_2_ger",           min_income=1.5, unlock=750, retire=1750, weight="medium",},
 				{priority=2.0, class=UnitClass.Tank,          unit="pz4j_ger2",           min_income=1.5, unlock=830, weight="medium",},
 				{priority=1.5, class=UnitClass.Tank,          unit="pzkpfw756",           min_income=1.5, unlock=1120, weight="heavy",},
 				{priority=1.5, class=UnitClass.HeavyTank,     unit="pz5g_ger2",           min_income=2.0, min_team=1, unlock=1750,},
@@ -525,8 +530,8 @@ Purchases = {
 				{priority=1.5, class=UnitClass.Tank,       unit="t60_guard",     min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="t70_guard",     min_income=1.0, unlock=440,},
 				{priority=1.0, class=UnitClass.ATTank,     unit="su76_guard",    min_income=1.5,},
-				{priority=2.0, class=UnitClass.Tank,          unit="m4a2",           min_income=1.5, unlock=750, weight="medium",},
-				{priority=2.0, class=UnitClass.Tank,          unit="t34_2_guard",    min_income=1.5, unlock=750, weight="medium",},
+				{priority=2.0, class=UnitClass.Tank,          unit="m4a2",           min_income=1.5, unlock=750, retire=1170, weight="medium",},
+				{priority=2.0, class=UnitClass.Tank,          unit="t34_2_guard",    min_income=1.5, unlock=750, retire=1170, weight="medium",},
 				{priority=1.5, class=UnitClass.Tank,          unit="t34_3_guard",    min_income=1.5, unlock=1170, weight="medium",},
 				{priority=1.5, class=UnitClass.Tank,          unit="m4a2_76w",       min_income=1.5, unlock=1120, weight="medium",},
 				{priority=1.5, class=UnitClass.HeavyTank,     unit="kv85_guard",    min_income=2.0, min_team=1, unlock=1240,},
