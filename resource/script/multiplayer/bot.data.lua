@@ -495,6 +495,7 @@ Purchases = {
 				-- (unlock per the live mod's .set data).
 				{priority=2.5, class=UnitClass.Vehicle,    unit="sdkfz234_3", unlock=530, support=true,},
 				{priority=1.5, class=UnitClass.Tank,       unit="pz2l_ger2",          min_income=1.0, unlock=420,},
+				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz234_ger2",      min_income=1.0, unlock=530,},
 				{priority=1.5, class=UnitClass.Tank,       unit="sdkfz234_1",         min_income=1.0, unlock=420, weight="light",},
 				{priority=1.0, class=UnitClass.Tank,       unit="pz3_ger2",           min_income=1.0, unlock=630, retire=830, weight="medium",},
 				{priority=1.5, class=UnitClass.AATank,     unit="ostwind_ger2",       min_income=1.5, unlock=560,},
