@@ -644,6 +644,7 @@ function GetAtTankUnit()
 	for i, t in pairs(roster) do
 		if t.class == UnitClass.ATTank
 		and (t.unlock == nil or elapsed >= t.unlock)
+		and (t.retire == nil or elapsed <  t.retire)   -- obsolete-chassis fade-out (see bot.data.lua)
 		and not live[t.unit] then
 			table.insert(attanks, t)
 		end

@@ -139,9 +139,10 @@ Purchases = {
 
 	-- Per-unit spawn-window fields: `unlock` = earliest elapsed seconds a unit may spawn;
 	-- `retire` = elapsed seconds at which a unit drops from the pool (obsolete gun). Both are
-	-- optional; omit for units that are eligible for the whole match. Only weight="medium"
-	-- weak-gun tanks carry `retire` -- they otherwise keep diluting the medium-armor pick
-	-- share long after their gun stops penetrating enemy armor.
+	-- optional; omit for units that are eligible for the whole match. weight="medium" weak-gun
+	-- tanks and open-top / gun-superseded tank destroyers (UnitClass.ATTank) carry `retire`:
+	-- the tanks otherwise keep diluting the medium-armor pick share, and the TDs keep getting
+	-- trickled onto the field long after their armored, better-gunned successor unlocked.
 	{--single full roster, infinite (category-driven selection)
 		Repeat = 0,
 		Units = {
@@ -181,7 +182,7 @@ Purchases = {
 				{priority=1.5, class=UnitClass.HeavyTank,     unit="mk4",                  min_income=2.0, min_team=1, unlock=820,},
 				{priority=1.5, class=UnitClass.HeavyTank,     unit="churchill_mk_vii",     min_income=2.0, min_team=1, unlock=1260,},
 				{priority=1.0, class=UnitClass.HeavyTank,     unit="m4a4_firefly",         min_income=2.0, min_team=1, unlock=1780,},
-				{priority=2.0, class=UnitClass.ATTank,        unit="m10wolverine_eng",     min_income=1.5, unlock=820,},
+				{priority=2.0, class=UnitClass.ATTank,        unit="m10wolverine_eng",     min_income=1.5, unlock=820, retire=1500,},
 				{priority=1.5, class=UnitClass.ATTank,        unit="achilles",             min_income=1.5, unlock=1500,},
 				{priority=0.8, class=UnitClass.ArtilleryTank, unit="m7_eng", min_income=2.0, min_team=1, unlock=900, arty="field",},
 			},
@@ -241,7 +242,7 @@ Purchases = {
 				{priority=0.5, class=UnitClass.HeavyTank,     unit="sdkfz182b",            min_income=2.5, min_team=2, unlock=2160,},
 				{priority=2.0, class=UnitClass.ATTank,        unit="stug3g_seq",           min_income=1.5, unlock=950,},
 				{priority=1.5, class=UnitClass.ATTank,        unit="hetzer",               min_income=1.5, unlock=880,},
-				{priority=1.5, class=UnitClass.ATTank,        unit="marder_3m",            min_income=1.5, unlock=750,},
+				{priority=1.5, class=UnitClass.ATTank,        unit="marder_3m",            min_income=1.5, unlock=750, retire=880,},
 				{priority=1.0, class=UnitClass.ATTank,        unit="jagdpanzer_iv",        min_income=2.0, unlock=1500,},
 				{priority=1.0, class=UnitClass.ATTank,        unit="jagdpanther",          min_income=2.5, min_team=1, unlock=2000,},
 				{priority=0.8, class=UnitClass.ArtilleryTank, unit="wespe", min_income=2.0, min_team=1, unlock=900, arty="field",},
@@ -319,7 +320,7 @@ Purchases = {
 				{priority=1.0, class=UnitClass.HeavyTank,     unit="pz6h_ss",              min_income=2.0, min_team=1, unlock=1750,},
 				{priority=0.5, class=UnitClass.HeavyTank,     unit="pz6bh_ss",             min_income=2.5, min_team=2, unlock=2160,},
 				{priority=1.5, class=UnitClass.ATTank,        unit="hetzer_ss",            min_income=1.5, unlock=880,},
-				{priority=1.5, class=UnitClass.ATTank,        unit="marder_3m_ss",         min_income=1.5, unlock=750,},
+				{priority=1.5, class=UnitClass.ATTank,        unit="marder_3m_ss",         min_income=1.5, unlock=750, retire=830,},
 				{priority=1.5, class=UnitClass.ATTank,        unit="stug3f_ss",            min_income=1.0, unlock=830,},
 				{priority=2.0, class=UnitClass.ATTank,        unit="stug4g_ss",            min_income=1.5, unlock=950,},
 				{priority=1.5, class=UnitClass.ATTank,        unit="jagdpanzer_iv_l48_ss",    min_income=1.5, unlock=950,},
@@ -410,7 +411,7 @@ Purchases = {
 				{priority=1.5, class=UnitClass.HeavyTank,     unit="is1",                  min_income=2.0, min_team=1, unlock=1500,},
 				{priority=1.0, class=UnitClass.HeavyTank,     unit="is2",                  min_income=2.5, min_team=1, unlock=2160,},
 				{priority=2.0, class=UnitClass.ATTank,        unit="su85",                 min_income=1.5,},
-				{priority=2.0, class=UnitClass.ATTank,        unit="su76",                 min_income=1.5,},
+				{priority=2.0, class=UnitClass.ATTank,        unit="su76",                 min_income=1.5, retire=1170,},
 				{priority=1.0, class=UnitClass.ATTank,        unit="isu122",               min_income=2.5, min_team=1,},
 				-- su122: closed-casemate 122mm howitzer on a T-34 hull, the direct Soviet
 				-- counterpart to StuH42 -- direct-fire infantry support, escorts the main
@@ -529,7 +530,7 @@ Purchases = {
 				{priority=2.5, class=UnitClass.Vehicle,    unit="m3_guard", unlock=240, support=true,},
 				{priority=1.5, class=UnitClass.Tank,       unit="t60_guard",     min_income=1.0, unlock=420,},
 				{priority=1.5, class=UnitClass.Tank,       unit="t70_guard",     min_income=1.0, unlock=440,},
-				{priority=1.0, class=UnitClass.ATTank,     unit="su76_guard",    min_income=1.5,},
+				{priority=1.0, class=UnitClass.ATTank,     unit="su76_guard",    min_income=1.5, retire=1170,},
 				{priority=2.0, class=UnitClass.Tank,          unit="m4a2",           min_income=1.5, unlock=750, retire=1170, weight="medium",},
 				{priority=2.0, class=UnitClass.Tank,          unit="t34_2_guard",    min_income=1.5, unlock=750, retire=1170, weight="medium",},
 				{priority=1.5, class=UnitClass.Tank,          unit="t34_3_guard",    min_income=1.5, unlock=1170, weight="medium",},

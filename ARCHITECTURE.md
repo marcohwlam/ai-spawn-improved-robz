@@ -113,7 +113,11 @@ whose spawn window is open (`unlock` ≤ elapsed < `retire`), skipping anything 
 recharge (`bot.data.lua` `;Nsec` cooldown) or `FailCooldown` (benched after an
 unaffordable spawn attempt). The optional `retire` field drops a weak-gun
 `weight="medium"` tank once its gun can no longer penetrate the enemy armor on
-the field, so it stops diluting the medium-armor pick share late-game.
+the field, so it stops diluting the medium-armor pick share late-game. The same
+`retire` field also gates `GetAtTankUnit` (the ATTank trickle picker), retiring
+the open-top/gun-superseded tank destroyers (`marder_3m`, `marder_3m_ss`,
+`su76`, `su76_guard`, `m10wolverine_eng`) once their armored, better-gunned
+successor has unlocked.
 
 Wave cadence: `WaveIntervalNow()` starts from `WaveIntervalSec = 110` seconds,
 multiplied by the phase's `waveMult` (early 1.0 / mid 1.5 / late 2.25), then
