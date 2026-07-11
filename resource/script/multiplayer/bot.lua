@@ -88,6 +88,9 @@ local MaxWaveFails    = 6       -- consecutive failed Spawns => treat MP as spen
 local HeavyFailStreakLimit = 3     -- consecutive failed late-phase heavy Spawn attempts => slow down
 local SpawnSlowdownSec     = 150   -- seconds every interval runs at HeavyFailSlowdownMult once tripped
 local HeavyFailSlowdownMult = 2.0  -- -100% rate change: every interval doubles during the window
+local ArmorBankSec = 90   -- seconds: after an affordable armor unit fails to spawn (MP balance
+                          -- drained), refuse to downgrade to a cheaper tier for this long so MP
+                          -- banks toward the armor. Self-ends the instant armor is affordable.
 
 -- Neutral-flag capper trickle: every NeutralInterval quants, if any flag is
 -- neutral, spawn one cheap single soldier ordered to grab a neutral flag.
@@ -1451,6 +1454,21 @@ function GetUnitToSpawn(units)
 		return t.priority * mul
 	end
 
+	-- Armor-bank window: an affordable armor unit just failed to spawn (MP balance drained).
+	-- Refuse to downgrade to a cheaper tier -- spawn armor if any is affordable now, else
+	-- spawn nothing so MP accumulates for it. Wave + backfill both route through here, so
+	-- both stop; the capper/defender/attank trickles use their own pickers and keep running,
+	-- and the flag-capturing cappers keep lifting income while the balance recovers.
+	if elapsed < (Context.ArmorBankUntil or 0) then
+		if #byTier.heavy > 0 then
+			return GetRandomItem(byTier.heavy, weightOf)
+		elseif #byTier.medium > 0 then
+			return GetRandomItem(byTier.medium, weightOf)
+		else
+			return nil
+		end
+	end
+
 	-- Per-group armor lead, gated by the army-wide armor deficit. Front-loading leads
 	-- with armor at the wave start but stops once the army meets its armor target, so
 	-- surviving tanks across waves no longer crowd out infantry refills.
@@ -1845,6 +1863,7 @@ function OnGameStart()
 	Context.ConsecutiveHeavyFails = 0
 	Context.HeavyFailStreak = {}
 	Context.SpawnSlowdownUntil = 0
+	Context.ArmorBankUntil = 0
 	Context.LastNeutralTime = 0
 	Context.LastBackfillTime = 0
 	Context.LastDefenderTime = 0
@@ -1963,6 +1982,14 @@ function AttemptSpawn(tag)
 	end
 	if not ok then
 		Context.FailCooldown[unit.unit] = Elapsed()
+		-- An affordable armor unit (it passed min_income to be picked) failed to spawn =>
+		-- the MP balance is drained. Open the bank window so GetUnitToSpawn stops downgrading
+		-- to cheap tanks and banks toward this armor instead. Generalises the late-heavy
+		-- HeavyFailSlowdown to all armor, every phase.
+		local bankTier = TierOf(unit)
+		if bankTier == "heavy" or bankTier == "medium" then
+			Context.ArmorBankUntil = Elapsed() + ArmorBankSec
+		end
 	else
 		-- Advance the ratio/aux cycle on a successful spawn.
 		if TierOf(unit) == nil then
