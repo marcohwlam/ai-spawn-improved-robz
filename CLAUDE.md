@@ -8,6 +8,8 @@ A pure-Lua bot-AI override mod for **Men of War: Assault Squad 2** (game 3.262),
 
 Read `ARCHITECTURE.md` first — it's the authoritative structural map (module diagram, per-quant data flow, subsystem breakdown). `README.md` has a feature-level summary and install notes. This file only covers what those two don't: commands and repo-specific conventions.
 
+See `docs/REFERENCE.md` for filesystem paths, the game log location, RobZ data sources, and a glossary of game/API terms.
+
 ## Commands
 
 ### Lua tests (offline, no game engine required, stock Lua 5.x)
