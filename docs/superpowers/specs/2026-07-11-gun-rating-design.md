@@ -177,8 +177,11 @@ Properties:
 
 ## Rollback / safety
 
-- The generated table and the `weightOf` branch are additive. Deleting `gun_ratings.lua`
-  (or shipping it empty) makes every lookup nil => the boost is a no-op => stock behavior.
+- The generated table and the `weightOf` branch are additive. Shipping an EMPTY
+  `gun_ratings.lua` (`return {}`) makes every lookup nil => the boost is a no-op =>
+  stock behavior. Note: the table is loaded with `require`, so DELETING the file makes
+  the load throw and aborts the bot script — the safe rollback is an empty `return {}`,
+  not deletion.
 - No change to any spawn count, cap, cadence, tier ratio, or unlock/retire time.
 
 ## Files

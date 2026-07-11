@@ -550,5 +550,7 @@ git commit -m "feat: add SdKfz 234/2 Puma (5cm) to ger/ger_ss light roster @530s
 
 - Scope boundary: gun-rating does not create a gun that is not unlocked. Task 3 narrows
   (does not fully close) the German 460-530s Stuart window by adding the Puma at 530s.
-- The whole feature is additive and reversible: an empty or deleted `gun_ratings.lua`
+- The whole feature is additive and reversible: an EMPTY `gun_ratings.lua` (`return {}`)
   makes every lookup nil and restores stock picker behavior; the Puma rows are inert data.
+  (The table is loaded via `require`, so DELETING the file throws at load — the safe
+  rollback is an empty `return {}`, not deletion.)
