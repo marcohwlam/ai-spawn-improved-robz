@@ -56,6 +56,12 @@ assert(Context.ArmorBankUntil > 500, "armor Spawn failure opens the bank window"
 
 Context.GameClock = 500
 Context.ArmorBankUntil = 0
+Context.SpawnInfo = medium
+AttemptSpawn("SPAWN")
+assert(Context.ArmorBankUntil > 500, "medium armor Spawn failure also opens the bank window")
+
+Context.GameClock = 500
+Context.ArmorBankUntil = 0
 Context.SpawnInfo = light
 AttemptSpawn("SPAWN")
 assert(Context.ArmorBankUntil == 0, "non-armor Spawn failure must NOT open the bank window")
