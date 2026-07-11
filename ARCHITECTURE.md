@@ -127,6 +127,16 @@ doubles every interval-gated cadence (`IntervalMult()`) for `SpawnSlowdownSec`
 after repeated failed heavy spawns, instead of a hard stop — the field stays
 active while MP banks toward the heavy.
 
+An armor-bank window (`Context.ArmorBankUntil`, `ArmorBankSec`) generalises
+the late-heavy slowdown: when a `min_income`-eligible armor unit fails
+`Commands:Spawn` (the MP balance is drained), `GetUnitToSpawn` refuses to
+downgrade to a cheaper tier for `ArmorBankSec` seconds, spawning armor if
+affordable and otherwise nothing, so the balance banks toward it while the
+cappers keep taking flags. Artillery upkeep bends to the flag score through
+`ArtyCapNow()`: the baseline `ArtyCap` is 1, dropped to 0 while badly losing
+(`FlagDeficit >= BadlyLosingDeficit`) or while the bank window is active,
+freeing MP for the front line.
+
 **Faction composition bias** applies a per-faction minimum-count floor
 (`FactionBias` table, documented in
 `docs/superpowers/specs/2026-07-06-faction-composition-bias-design.md`) across
