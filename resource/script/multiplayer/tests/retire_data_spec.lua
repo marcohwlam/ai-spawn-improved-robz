@@ -31,26 +31,28 @@ for _, e in ipairs(expected) do
 		id .. " retire expected " .. want .. " got " .. tostring(u.retire))
 end
 
--- 2. Safety: no faction loses all its armor. For every army, at the latest retire
---    time present in its roster, at least one Tank/HeavyTank remains eligible
---    (retire nil or retire > that time).
-local ARMOR = { Tank = true, HeavyTank = true }
+-- 2. Safety: the medium-weight tank tier is never emptied at any retire boundary.
+--    A HeavyTank surviving at time T proves nothing about the medium tier (no
+--    HeavyTank ever carries `retire`), so checking Tank+HeavyTank together at only
+--    the single latest retire time hides the real risk: a boundary where every
+--    medium tank has retired. Instead, for every army and for EACH distinct
+--    `retire` value T present in that army's roster, assert at least one
+--    weight=="medium" Tank remains eligible at T (retire nil or retire > T).
 for army, roster in pairs(Units) do
-	local latest = 0
+	local retireTimes = {}
 	for _, u in ipairs(roster) do
-		if u.retire and u.retire > latest then latest = u.retire end
+		if u.retire then retireTimes[u.retire] = true end
 	end
-	if latest > 0 then
+	for t in pairs(retireTimes) do
 		local survivors = 0
 		for _, u in ipairs(roster) do
-			local cls = (u.class == UnitClass.Tank and "Tank")
-				or (u.class == UnitClass.HeavyTank and "HeavyTank") or nil
-			if cls and ARMOR[cls] and (u.retire == nil or u.retire > latest) then
+			if u.class == UnitClass.Tank and u.weight == "medium"
+				and (u.retire == nil or u.retire > t) then
 				survivors = survivors + 1
 			end
 		end
 		assert(survivors > 0,
-			army .. " has no armor left at its latest retire time " .. latest)
+			army .. " has no medium tank left at retire time " .. t)
 	end
 end
 
