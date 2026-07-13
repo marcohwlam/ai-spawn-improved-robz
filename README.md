@@ -233,3 +233,10 @@ directory (here, via a symlink to this repo).
   the misleading `c(N)` field.
 - Self-propelled artillery (`ArtilleryTank`) and the bugged static MG emplacements are
   excluded from spawning.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE). Covers this repository's own Lua and Python source only.
+It does not grant rights to Men of War: Assault Squad 2 or the RobZ Realism Mod; this mod
+ships no game assets and requires both to run. Inspired by cbyyy2013's Better AI and the
+frontlines AI concept.
