@@ -37,7 +37,7 @@ Phases = {
 --   mid   -> late = max(first HeavyTank-class unlock, first medium + 300s floor).
 -- The 300s floor only binds eng (820 -> 1050) and rus (830 -> 1050), whose heavies
 -- unlock right after their mediums. Japan has no HeavyTank unit, so its late anchors
--- to chi-to (1380) and its late composition drops the heavy tier (see lateTargets).
+-- to chi-to (1270) and its late composition drops the heavy tier (see lateTargets).
 -- budget/waveMult/squadCap are NOT here; they stay shared on the global Phases template.
 FactionPhases = {
 	["eng"]       = { mid = 750, late = 1050 },
@@ -50,11 +50,11 @@ FactionPhases = {
 	                  lateTargets = { heavy = 1, medium = 1, light = 2, rifle = 1, smg = 1 } },
 	["usa"]       = { mid = 530, late = 1200 },
 	["rus"]       = { mid = 750, late = 1050 },
-	["jap"]       = { mid = 580, late = 1380,
+	["jap"]       = { mid = 580, late = 1270,
 	                  lateTargets = { medium = 2, light = 2, rifle = 1, smg = 1 } },
 	["ger2"]      = { mid = 630, late = 1750,
 	                  lateTargets = { heavy = 1, medium = 1, light = 2, rifle = 1, smg = 1 } },
-	["rus_guard"] = { mid = 750, late = 1240 },
+	["rus_guard"] = { mid = 750, late = 1232 },
 }
 
 -- Per-faction minimum-count floor: a category short-circuits DecideTier (tier categories) or
