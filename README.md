@@ -51,6 +51,10 @@ flow, subsystem breakdown). Summary:
   `ger_ss` biases tank destroyers in mid, then heavy armor in late). Layered as a
   short-circuit on top of the existing tier ratio and trickle cooldowns rather than
   replacing them.
+- **`axis_minor`** — six-nation Axis coalition (Bulgarian, Hungarian, Romanian,
+  Finnish, Italian, plus captured German heavies); infantry-heavy with late,
+  tank-destroyer-led armor. Heavy tier is dropped from late-game composition
+  (two rare captured heavies only).
 
 ### Groups and routing
 - **Group system** — up to 2 squads-of-squads share one attack target each
