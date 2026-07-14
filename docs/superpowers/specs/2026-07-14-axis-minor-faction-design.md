@@ -131,11 +131,16 @@ pure-formula policy.
 | `zrinyi1` | ATTank | | 950 | 1.5 | 1.5 |
 | `3ro` | ATTank | | 950 | 1.5 | 1.0 |
 | `m9053` | ATTank | | 1080 | 1.5 | 1.0 |
-| `cannone9053` | Howitzrer | `arty="field"` | 900 | 1.0 | 1.0 |
-| `obice14940` | Howitzrer | `arty="field"` | 1200 | 1.0 | 1.0 |
-| `pak43_towed_hun` | Howitzrer | `arty="heavy"` | 1200 | 1.0 | 1.0 |
 | `sgrw_42` | Mortar | | 600 | 1.0 | 1.0 |
 | `22` | Mortar | | 180 | 1.0 | 1.0 |
+
+**Towed howitzers excluded from v1** (`cannone9053`, `obice14940`, `pak43_towed_hun`):
+`UnitClass.Howitzrer` is collected by no picker and is explicitly excluded from the aux
+pool in `bot.lua` (SPGs-disabled block), so a Howitzrer row never spawns — it is a dead
+class. Routing them as non-assault `ArtilleryTank` (rear artillery) would make them live
+but towed-gun behavior through the arty trickle is unverified. Left out of v1; axis_minor's
+fire support is its assault guns (Semovente/Zrinyi II/BT-42) plus the two mortars. Adding
+rear artillery is a follow-up.
 | `panther5g_hungarian` | HeavyTank | `min_team=1` | 1500 | 2.0 | 1.0 |
 | `pz6e_hungarian` | HeavyTank | `min_team=1` | 1752 | 2.0 | 1.0 |
 
