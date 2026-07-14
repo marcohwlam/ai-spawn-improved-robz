@@ -18,3 +18,24 @@ eq(FactionBias.axis_minor.mid.attank,  1, "axis_minor mid floors attank")
 eq(FactionBias.axis_minor.late.attank, 1, "axis_minor late floors attank")
 eq(FactionBias.axis_minor.late.medium, 1, "axis_minor late floors medium")
 print("axis_minor phases/bias OK")
+
+-- axis_minor roster present and well-formed
+local function roster(army)
+	for _, blk in ipairs(Purchases) do
+		if blk.Units and blk.Units[army] then return blk.Units[army] end
+	end
+	return nil
+end
+local axm = roster("axis_minor")
+assert(axm ~= nil and #axm > 0, "axis_minor roster block exists and is non-empty")
+local hasMedium, hasHeavy, hasTD = false, false, false
+for _, t in ipairs(axm) do
+	if t.class == UnitClass.Tank and t.weight == "medium" then hasMedium = true end
+	if t.class == UnitClass.HeavyTank then hasHeavy = true end
+	if t.class == UnitClass.ATTank then hasTD = true end
+	assert(t.class ~= UnitClass.Howitzrer, "axis_minor roster uses no dead Howitzrer class")
+end
+assert(hasMedium, "axis_minor has a medium tank (Turan)")
+assert(hasHeavy,  "axis_minor has a captured heavy")
+assert(hasTD,     "axis_minor has a tank destroyer")
+print("axis_minor roster OK")
