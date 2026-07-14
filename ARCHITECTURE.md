@@ -158,6 +158,10 @@ faction can bias a *different* category per phase, not just a bigger floor on
 the same one (e.g. `ger_ss` biases `attank` in mid, `heavy` in late). ATTank
 and Sniper (like Mortar before them) are pulled out of the shared
 `AuxPerCycle=2` aux batch into their own dedicated capped trickles.
+`axis_minor` is supported as a data-only faction (roster + `FactionPhases` +
+`FactionBias` entries, no `bot.lua` changes), with its late-phase heavy tier
+dropped the same way as `jap`'s and towed howitzers deferred (`UnitClass.Howitzrer`
+is a dead class no picker collects).
 
 ### 2. Groups (`ManageGroups`, `ApportionArmor`, `PickGroupTarget`, `PickSubTarget`)
 Up to `MaxGroups` (2) squads-of-squads share one attack target. `PickGroupTarget`
