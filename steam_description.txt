@@ -44,6 +44,13 @@ GitHub: [url]https://github.com/marcohwlam/ai-spawn-improved-robz[/url]
 
 [h1]Change Log[/h1]
 
+[b]v1.3.0[/b]
+[list]
+[*] New AI faction: Axis Minor. The bot now fields RobZ's six-nation Axis coalition (Bulgarian, Hungarian, Romanian, Finnish, Italian, plus captured German heavies) at full parity with the other factions, with its own phase timing and doctrine. Infantry-heavy with late, tank-destroyer-led armor; the late-game heavy tier is dropped since its only heavies are two rare captured vehicles
+[*] Recomputed every unit's unlock time directly from RobZ's own cooldown/fore fields instead of the drift-prone hand-written comments, so spawn timing tracks the real data
+[*] Fixed the SS Panther and Tiger unlock times, which were transposed (Panther was arriving too early, Tiger too late)
+[/list]
+
 [b]v1.2.0[/b]
 [list]
 [*] Tank destroyers now escort the main assault group and follow its target instead of overwatching a rear flag
