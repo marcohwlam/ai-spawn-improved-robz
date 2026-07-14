@@ -4,7 +4,7 @@ data per faction. Read-only report; never modifies bot.data.lua.
 Run: python3 tools/check_unit_roster.py <gamelogic.pak> <bot.data.lua>"""
 import re, sys, zipfile, argparse
 
-FACTIONS = ["eng", "ger", "ger_ss", "ger2", "usa", "rus", "rus_guard", "jap"]
+FACTIONS = ["eng", "ger", "ger_ss", "ger2", "usa", "rus", "rus_guard", "jap", "axis_minor"]
 
 ID_PATTERNS = [
     re.compile(r'\bv1\(([A-Za-z0-9_\-.]+)\)'),     # vehicle breed reference
