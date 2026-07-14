@@ -55,6 +55,8 @@ FactionPhases = {
 	["ger2"]      = { mid = 630, late = 1750,
 	                  lateTargets = { heavy = 1, medium = 1, light = 2, rifle = 1, smg = 1 } },
 	["rus_guard"] = { mid = 750, late = 1232 },
+	["axis_minor"] = { mid = 650, late = 1500,
+	                   lateTargets = { medium = 2, light = 2, rifle = 1, smg = 1 } },
 }
 
 -- Per-faction minimum-count floor: a category short-circuits DecideTier (tier categories) or
@@ -132,6 +134,14 @@ FactionBias = {
 	eng = {
 		mid  = { artillery = 1 },
 		late = { artillery = 1, heavy = 1 },
+	},
+	-- Second-line coalition (BUL/HUN/ROM/FIN/ITA): broad infantry defense early; weak, late
+	-- tanks are met with tank destroyers and AT infantry rather than a tank spearhead; Turan
+	-- mediums join the sustained TD presence late. No heavy floor (only 2 rare captured heavies).
+	axis_minor = {
+		early = { rifle = 1 },
+		mid   = { attank = 1 },
+		late  = { attank = 1, medium = 1 },
 	},
 }
 
