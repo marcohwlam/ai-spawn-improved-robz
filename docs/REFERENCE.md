@@ -60,7 +60,7 @@ notes disagree, the code wins and the correction is called out.
 
 | Field | Meaning |
 |---|---|
-| `unlock` | Earliest elapsed match-seconds a unit may spawn (time gate). Checked as `elapsed >= unit.unlock` in `GetUnitToSpawn`. Omit = eligible from t=0. |
+| `unlock` | Earliest elapsed match-seconds a unit may spawn (time gate). Checked as `elapsed >= unit.unlock` in `GetUnitToSpawn`. Omit = eligible from t=0. Derived from RobZ `.set` fields, not the trailing `;NNNsec` comment — see "Deriving `unlock`" below. |
 | `retire` | Elapsed seconds at which a unit drops from the spawn pool (obsolete gun/chassis). Checked as `elapsed < unit.retire`. See correction below. |
 | `min_income` | A threshold on the income RATE, used as an affordability proxy in pool eligibility: a unit is eligible only while `income >= min_income`. See "why this is imperfect" below. |
 | `min_team` | Minimum `teamSize` for the unit to be eligible (`teamSize >= unit.min_team`). Gates expensive units (most heavy tanks) to team games; `min_team=2` restricts to 2v2+. Omit = 0. |
@@ -84,6 +84,40 @@ unit time), not on the current MP balance and not on the unit's cost. A unit can
 `income >= min_income` and still fail `Commands:Spawn` because the actual MP balance is
 drained. The rate says "the economy is large enough that this unit is plausibly
 affordable over time"; it cannot say "you can pay for it right now."
+
+### Deriving `unlock` from RobZ `.set` fields
+
+RobZ has no machine-readable unlock schedule. Its own bot gates by year (`period = "44 45"`),
+and the trailing `;NNNsec` comment on each `.set` line is hand-written and drifts. The real
+generative rule, recovered by fitting against every annotated line, is:
+
+```
+unlock = round( c * (|fore| + 1) )
+```
+
+where `c` is the `c(N)` cooldown field and `fore` is the AI `{fore N}` / `f(N)` value
+(always negative; take its absolute value). Worked examples from the shipped ger roster,
+all matching their comments exactly: `sdkfz222` `c(10) fore -37` -> 380; `sdkfz234`
+`c(10) fore -52` -> 530; `pz3_m` `c(10) fore -62` -> 630.
+
+Fit across all nine factions (`c > 0` and `fore` present):
+
+| bucket | count | meaning |
+|---|---|---|
+| comment == formula | 420 | trusted |
+| comment present, differs | 102 | **drifted comment — prefer the formula** |
+| no comment | 330 | formula is the only source |
+| no `c()` or no `fore` | 217 | formula N/A (towed-gun `("name" ...)` squad format) |
+
+**The `;NNNsec` comment is NOT authoritative.** When it disagrees with the formula, the
+disagreement is almost always one of: (a) sub-10s rounding, because the comment rounds a
+decimal-`fore` result (`jagdpanther` `fore -1.35` -> 1997.5, commented `;2000`) — the
+formula is the precise value; (b) a `fore=0` sentinel on `_seq` sequenced units (the real
+`fore` lives on the base unit) and on non-combat ammo boxes — use the base unit's value;
+(c) c=60 rocket/howitzer lines off by a multiple of 60, plus a handful of deliberate
+hand-overrides (`bt42` commented `;270` vs formula 540; `155mm_mle1917` `;1080` vs 660) —
+these need per-unit judgment. Rule of thumb: **formula wins, except `fore=0` (use base
+unit) and the named hand-overrides.**
 
 ### Economy / API terms (`bot.lua`)
 
