@@ -155,7 +155,7 @@ eq(eng[2].upto, 1050, "eng mid->late uses the 300s floor (1050), not 820")
 -- jap: no heavy tier -> late targets drop heavy and boost medium.
 local jap = ResolvePhases("jap")
 eq(jap[1].upto, 580,  "jap early ends at 580")
-eq(jap[2].upto, 1380, "jap mid ends at chi-to 1380")
+eq(jap[2].upto, 1270, "jap mid ends at chi-to 1270")
 eq(jap[3].targets.heavy,  nil, "jap late has no heavy target")
 eq(jap[3].targets.medium, 2,   "jap late medium boosted to 2")
 
@@ -166,8 +166,8 @@ print("ResolvePhases OK")
 -- CurrentPhase reads Context.Phases when set, falls back to global Phases when nil.
 Context.Phases = ResolvePhases("jap")
 eq(CurrentPhase(500).name,  "early", "jap 500 is early (< 580)")
-eq(CurrentPhase(600).name,  "mid",   "jap 600 is mid (>= 580, < 1380)")
-eq(CurrentPhase(1400).name, "late",  "jap 1400 is late (>= 1380)")
+eq(CurrentPhase(600).name,  "mid",   "jap 600 is mid (>= 580, < 1270)")
+eq(CurrentPhase(1400).name, "late",  "jap 1400 is late (>= 1270)")
 Context.Phases = nil
 eq(CurrentPhase(180).name, "mid", "fallback to global Phases when Context.Phases is nil")
 print("CurrentPhase faction OK")
